@@ -1,0 +1,9 @@
+[package]
+name = "my-gtk-app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+gst = { version = "0.19.5", package = "gstreamer" }
+gst-video = { version = "0.19.5", package = "gstreamer-video" }
+gtk = { version = "0.5.5", package = "gtk4" }

@@ -1,0 +1,16 @@
+[package]
+name = "xrs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+glib = { git = "https://github.com/gtk-rs/gtk-rs-core" }
+gtk = { git = "https://github.com/gtk-rs/gtk3-rs"}
+gdk = { git = "https://github.com/gtk-rs/gtk3-rs", package="gdk" }
+gst = { git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", package="gstreamer" }
+gst-video = { git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", package="gstreamer-video" }
+# glib = "0.16.7"
+# gst = { version = "0.19.5", package = "gstreamer" }
+# gtk = "0.16.2"
+
+
