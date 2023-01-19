@@ -122,9 +122,122 @@ fn main() {
 
     // Create a new application
     let app = Application::builder().application_id(APP_ID).build();
-    app.connect_activate(build_ui);
+
+    app.connect_activate(move |app| {
+        let video_window = gtk::DrawingArea::new();
+        
+        // click
+        let click = gtk::GestureClick::new();
+        click.connect_pressed(|click, press,x,y| {
+            click.set_state(gtk::EventSequenceState::Claimed);
+            println!("press:{:?},x:{:?},y:{:?}",press,x,y);
+        });
+        video_window.add_controller(&click);
+        
+        // // right click
+        // let right_click = gtk::GestureClick::new();
+        // right_click.set_button(gtk::gdk::ffi::GDK_BUTTON_SECONDARY as u32);
+        // right_click.connect_pressed(|right_click, press,x,y| {
+        //     right_click.set_state(gtk::EventSequenceState::Claimed);
+        //     println!("press:{:?},x:{:?},y:{:?}",press,x,y);
+        // });
+        // video_window.add_controller(&right_click);
+        
+        // // mouse move
+        // let motion = gtk::EventControllerMotion::new();
+        // motion.connect_motion(|_, x,y| {
+        //     // motion.set_state(gtk::EventSequenceState::Claimed);
+        //     println!("x:{:?},y:{:?}",x,y);
+        // });
+        // video_window.add_controller(&motion);
+        // let video_overlay = sink
+        //     .clone()
+        //     .dynamic_cast::<gst_video::VideoOverlay>()
+        //     .unwrap();
+
+        // let playbin = gst::ElementFactory::make("playbin")
+        //     .property("uri", "huri")
+        //     .build()
+        //     .unwrap();
+
+        // let video_overlay = sink
+        //     .clone()
+        //     .dynamic_cast::<gst_video::VideoOverlay>()
+        //     .unwrap();
+
+        video_window.connect_realize(move |video_window| {
+            //let video_overlay = &video_overlay;
+            
+
+            //let gdk_window = video_window.get_window();
+            
+            // if !gdk_window.ensure_native() {
+            //     println!("Can't create native window for widget");
+            //     process::exit(-1);
+            // }
+
+            
+            
+            // let display_type_name = gdk_window.display().type_().name();
+            // println!("window: {:?}, name: {}", gdk_window, display_type_name);
+
+            // extern "C" {
+            //     fn gdk_win32_window_get_handle(window: *mut glib::gobject_ffi::GObject) -> u32;
+            // }
+            // unsafe {
+            //     let xid = gdk_win32_window_get_handle(video_window.as_ptr() as *mut _);
+            //     println!("xid: {}", xid);
+            // }
+            
+            // get window handle, does not work in windows yet
+            // #[cfg(all(target_os = "windows"))] 
+            //  {
+            //     extern "C" {
+            //         pub fn gdk_win32_window_get_handle(
+            //             window: *mut glib::gobject_ffi::GObject,
+            //         ) -> *mut c_void;
+            //     }
+
+            //     // extern "C" {
+            //     //     pub fn gst_video_overlay_set_window_handle(
+            //     //         overlay: *mut gst_video::VideoOverlay,
+            //     //         handle: u64,
+            //     //     ) -> *mut c_void;
+            //     // }
+
+            //     #[allow(clippy::cast_ptr_alignment)]
+            //     unsafe {
+            //         let xid = gdk_win32_window_get_handle(gdk_window.as_ptr() as *mut _) as u64;
+            //         println!("window handle: {:?}", xid);
+            //         //gst_video_overlay_set_window_handle(video_overlay as *mut _, xid);
+            //         //println!("window handle: {:?}", xid);
+            //         //let mut xid = gdk_window.get_
+            //         video_overlay.set_window_handle(xid as usize);
+            //         //video_overlay.set_window_handle((xid as u64).try_into().unwrap());
+            //     }
+            // }
+        });
 
 
+
+        let window = ApplicationWindow::builder()
+            .application(app)
+            .default_width(1000)
+            .default_height(800)
+            .title("XRS Client")
+            .child(&video_window)
+            .build();
+
+        let keyboard = gtk::EventControllerKey::new();
+        keyboard.connect_key_pressed(|_, key, code, modifier| {
+            println!("key:{:?}, code:{:?}, modifier:{:?}", key, code, modifier);
+            gtk::Inhibit(false)
+        });
+        
+        window.add_controller(&keyboard);
+        window.show(); // present()
+
+    });
 
     // Run the application
     app.run();
@@ -136,88 +249,3 @@ fn main() {
 
 }
 
-
-fn build_ui(app: &Application) {
-
-    // Create a window
-    let video_window = gtk::DrawingArea::new();
-    
-    let click = gtk::GestureClick::new();
-    click.connect_pressed(|click, press,x,y| {
-        click.set_state(gtk::EventSequenceState::Claimed);
-        println!("press:{:?},x:{:?},y:{:?}",press,x,y);
-    });
-    
-    let right_click = gtk::GestureClick::new();
-    right_click.set_button(gtk::gdk::ffi::GDK_BUTTON_SECONDARY as u32);
-    right_click.connect_pressed(|right_click, press,x,y| {
-        right_click.set_state(gtk::EventSequenceState::Claimed);
-        println!("press:{:?},x:{:?},y:{:?}",press,x,y);
-    });
-    
-    let motion = gtk::EventControllerMotion::new();
-    motion.connect_motion(|_, x,y| {
-        // motion.set_state(gtk::EventSequenceState::Claimed);
-        println!("x:{:?},y:{:?}",x,y);
-    });
-    
-    // Assign the gesture to the treeview
-    video_window.add_controller(&click);
-    //video_window.add_controller(&right_click);
-    //video_window.add_controller(&motion);
-
-    // let video_overlay = playbin.clone().dynamic_cast::<gst_video::VideoOverlay>().unwrap();
-    // video_window.connect_realize(move |video_window| {
-    //     let video_overlay = &video_overlay;
-    //     let gdk_window = video_window.window().unwrap();
-        
-    //     if !gdk_window.ensure_native() {
-    //         println!("Can't create native window for widget");
-    //         process::exit(-1);
-    //     }
-
-    //     let display_type_name = gdk_window.display().type_().name();
-    //     println!("window: {:?}, name: {}", gdk_window, display_type_name);
-
-    //     // get window handle, does not work in windows yet
-    //     // #[cfg(all(target_os = "windows"))] 
-    //     //  {
-    //     //     extern "C" {
-    //     //         pub fn gdk_win32_window_get_handle(
-    //     //             window: *mut glib::gobject_ffi::GObject,
-    //     //         ) -> *mut c_void;
-    //     //     }
-
-    //     //     // extern "C" {
-    //     //     //     pub fn gst_video_overlay_set_window_handle(
-    //     //     //         overlay: *mut gst_video::VideoOverlay,
-    //     //     //         handle: u64,
-    //     //     //     ) -> *mut c_void;
-    //     //     // }
-
-    //     //     #[allow(clippy::cast_ptr_alignment)]
-    //     //     unsafe {
-    //     //         let xid = gdk_win32_window_get_handle(gdk_window.as_ptr() as *mut _) as u64;
-    //     //         println!("window handle: {:?}", xid);
-    //     //         //gst_video_overlay_set_window_handle(video_overlay as *mut _, xid);
-    //     //         //println!("window handle: {:?}", xid);
-    //     //         //let mut xid = gdk_window.get_
-    //     //         video_overlay.set_window_handle(xid as usize);
-    //     //         //video_overlay.set_window_handle((xid as u64).try_into().unwrap());
-    //     //     }
-    //     // }
-    // });
-
-
-
-    let window = ApplicationWindow::builder()
-        .application(app)
-        .default_width(1000)
-        .default_height(800)
-        .title("XRS Client")
-        .child(&video_window)
-        .build();
-
-    // Present window
-    window.present();
-}

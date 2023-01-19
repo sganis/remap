@@ -414,7 +414,7 @@ dependencies = [
 [[package]]
 name = "gstreamer"
 version = "0.20.0"
-source = "git+https://gitlab.freedesktop.org/gstreamer/gstreamer-rs#c2e7abd1285dafd0254b983ac807681d23dc9132"
+source = "git+https://gitlab.freedesktop.org/gstreamer/gstreamer-rs/#c2e7abd1285dafd0254b983ac807681d23dc9132"
 dependencies = [
  "bitflags",
  "cfg-if",
@@ -438,7 +438,7 @@ dependencies = [
 [[package]]
 name = "gstreamer-base"
 version = "0.20.0"
-source = "git+https://gitlab.freedesktop.org/gstreamer/gstreamer-rs#c2e7abd1285dafd0254b983ac807681d23dc9132"
+source = "git+https://gitlab.freedesktop.org/gstreamer/gstreamer-rs/#c2e7abd1285dafd0254b983ac807681d23dc9132"
 dependencies = [
  "atomic_refcell",
  "bitflags",
@@ -452,7 +452,7 @@ dependencies = [
 [[package]]
 name = "gstreamer-base-sys"
 version = "0.20.0"
-source = "git+https://gitlab.freedesktop.org/gstreamer/gstreamer-rs#c2e7abd1285dafd0254b983ac807681d23dc9132"
+source = "git+https://gitlab.freedesktop.org/gstreamer/gstreamer-rs/#c2e7abd1285dafd0254b983ac807681d23dc9132"
 dependencies = [
  "glib-sys 0.17.0",
  "gobject-sys 0.17.0",
@@ -464,7 +464,7 @@ dependencies = [
 [[package]]
 name = "gstreamer-sys"
 version = "0.20.0"
-source = "git+https://gitlab.freedesktop.org/gstreamer/gstreamer-rs#c2e7abd1285dafd0254b983ac807681d23dc9132"
+source = "git+https://gitlab.freedesktop.org/gstreamer/gstreamer-rs/#c2e7abd1285dafd0254b983ac807681d23dc9132"
 dependencies = [
  "glib-sys 0.17.0",
  "gobject-sys 0.17.0",
@@ -475,7 +475,7 @@ dependencies = [
 [[package]]
 name = "gstreamer-video"
 version = "0.20.0"
-source = "git+https://gitlab.freedesktop.org/gstreamer/gstreamer-rs#c2e7abd1285dafd0254b983ac807681d23dc9132"
+source = "git+https://gitlab.freedesktop.org/gstreamer/gstreamer-rs/#c2e7abd1285dafd0254b983ac807681d23dc9132"
 dependencies = [
  "bitflags",
  "cfg-if",
@@ -491,7 +491,7 @@ dependencies = [
 [[package]]
 name = "gstreamer-video-sys"
 version = "0.20.0"
-source = "git+https://gitlab.freedesktop.org/gstreamer/gstreamer-rs#c2e7abd1285dafd0254b983ac807681d23dc9132"
+source = "git+https://gitlab.freedesktop.org/gstreamer/gstreamer-rs/#c2e7abd1285dafd0254b983ac807681d23dc9132"
 dependencies = [
  "glib-sys 0.17.0",
  "gobject-sys 0.17.0",

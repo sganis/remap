@@ -89,6 +89,8 @@ static void realize_cb (GtkWidget *widget, CustomData *data) {
   window_handle = GDK_WINDOW_XID (window);
 #endif
   /* Pass it to pipeline, which implements VideoOverlay and will forward it to the video sink */
+  
+  g_print("handle: %d\n", window_handle);
   gst_video_overlay_set_window_handle (GST_VIDEO_OVERLAY (data->sink), window_handle);
 }
 
@@ -101,16 +103,17 @@ static void delete_event_cb (GtkWidget *widget, GdkEvent *event, CustomData *dat
  * rescaling, etc). GStreamer takes care of this in the PAUSED and PLAYING states, otherwise,
  * we simply draw a black rectangle to avoid garbage showing up. */
 static gboolean draw_cb (GtkWidget *widget, cairo_t *cr, CustomData *data) {
-  if (data->state < GST_STATE_PAUSED) {
-    GtkAllocation allocation;
+  g_print("draw called.\n");
+  // if (data->state < GST_STATE_PAUSED) {
+  //   GtkAllocation allocation;
 
-    /* Cairo is a 2D graphics library which we use here to clean the video window.
-     * It is used by GStreamer for other reasons, so it will always be available to us. */
-    gtk_widget_get_allocation (widget, &allocation);
-    cairo_set_source_rgb (cr, 0, 0, 0);
-    cairo_rectangle (cr, 0, 0, allocation.width, allocation.height);
-    cairo_fill (cr);
-  }
+  //   /* Cairo is a 2D graphics library which we use here to clean the video window.
+  //    * It is used by GStreamer for other reasons, so it will always be available to us. */
+  //   gtk_widget_get_allocation (widget, &allocation);
+  //   cairo_set_source_rgb (cr, 0, 0, 0);
+  //   cairo_rectangle (cr, 0, 0, allocation.width, allocation.height);
+  //   cairo_fill (cr);
+  //}
 
   return FALSE;
 }
@@ -142,8 +145,7 @@ static gboolean button_press_cb (GtkWidget *widget, GdkEventButton *event,
 static void create_ui (CustomData *data) {
   GtkWidget *main_window;  /* The uppermost window, containing all other windows */
   GtkWidget *video_window; /* The drawing area where the video will be shown */
-  GtkWidget *main_box;     /* VBox to hold main_hbox and the controls */
-  GtkWidget *main_hbox;    /* HBox to hold the video_window and the stream info text widget */
+  GtkWidget *hbox;    /* HBox to hold the video_window */
 
   main_window = gtk_window_new (GTK_WINDOW_TOPLEVEL);
   g_signal_connect (G_OBJECT (main_window), "delete-event", G_CALLBACK (delete_event_cb), data);
@@ -151,19 +153,20 @@ static void create_ui (CustomData *data) {
   video_window = gtk_drawing_area_new();
   //gtk_widget_set_double_buffered (video_window, FALSE);
   g_signal_connect (video_window, "realize", G_CALLBACK (realize_cb), data);
-  g_signal_connect (video_window, "draw", G_CALLBACK (draw_cb), data);
+  //g_signal_connect (video_window, "draw", G_CALLBACK (draw_cb), data);
   gtk_widget_add_events(video_window,  GDK_KEY_PRESS_MASK|GDK_KEY_RELEASE_MASK|GDK_BUTTON_PRESS_MASK);
   gtk_widget_set_can_focus(video_window, TRUE);
   g_signal_connect (video_window, "key-press-event", G_CALLBACK (key_press_cb), NULL);
   //g_signal_connect (video_window, "key-release-event", G_CALLBACK (key_release_cb), NULL);
   g_signal_connect (video_window, "button-press-event", G_CALLBACK (button_press_cb), NULL);
 
-  main_hbox = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 0);
-  gtk_box_pack_start (GTK_BOX (main_hbox), video_window, TRUE, TRUE, 0);
+  hbox = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
+  gtk_box_pack_start (GTK_BOX (hbox), video_window, TRUE, TRUE, 0);
  
-  main_box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
-  gtk_box_pack_start (GTK_BOX (main_box), main_hbox, TRUE, TRUE, 0);
-  gtk_container_add (GTK_CONTAINER (main_window), main_box);
+  // main_box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
+  // gtk_box_pack_start (GTK_BOX (main_box), main_hbox, TRUE, TRUE, 0);
+  
+  //gtk_container_add (GTK_CONTAINER (main_window), hbox);
   gtk_window_set_default_size (GTK_WINDOW (main_window), 1200, 800);
 
   gtk_widget_show_all (main_window);
@@ -174,6 +177,7 @@ static void create_ui (CustomData *data) {
 /* This function is called periodically to refresh the GUI */
 static gboolean refresh_ui (CustomData *data) {
     g_print("refresing the gui...\n");
+    return TRUE;
 //   gint64 current = -1;
 
 //   /* We do not want to update anything unless we are in the PAUSED or PLAYING states */
@@ -319,7 +323,7 @@ int main(int argc, char *argv[]) {
     }
 
     /* Register a function that GLib will call every second */
-    g_timeout_add_seconds (1, (GSourceFunc)refresh_ui, &data);
+    //g_timeout_add_seconds (1, (GSourceFunc)refresh_ui, &data);
 
     /* Start the GTK main loop. We will not regain control until gtk_main_quit is called. */
     gtk_main ();
