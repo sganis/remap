@@ -146,6 +146,7 @@ static void create_ui (CustomData *data) {
   GtkWidget *main_window;  /* The uppermost window, containing all other windows */
   GtkWidget *video_window; /* The drawing area where the video will be shown */
   GtkWidget *hbox;    /* HBox to hold the video_window */
+  GtkWidget *main_box;    /* HBox to hold the video_window */
 
   main_window = gtk_window_new (GTK_WINDOW_TOPLEVEL);
   g_signal_connect (G_OBJECT (main_window), "delete-event", G_CALLBACK (delete_event_cb), data);
@@ -162,14 +163,11 @@ static void create_ui (CustomData *data) {
 
   hbox = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
   gtk_box_pack_start (GTK_BOX (hbox), video_window, TRUE, TRUE, 0);
- 
-  // main_box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
-  // gtk_box_pack_start (GTK_BOX (main_box), main_hbox, TRUE, TRUE, 0);
-  
-  //gtk_container_add (GTK_CONTAINER (main_window), hbox);
-  gtk_window_set_default_size (GTK_WINDOW (main_window), 1200, 800);
 
+  gtk_container_add (GTK_CONTAINER (main_window), hbox);
+  gtk_window_set_default_size (GTK_WINDOW (main_window), 1200, 800);
   gtk_widget_show_all (main_window);
+
   //gdk_set_show_events (TRUE);
 
 }

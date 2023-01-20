@@ -1,3 +1,7 @@
 target/
 *.obj
 .vscode/
+.vs/
+*.vcxproj.user
+x64/
+*.exe
