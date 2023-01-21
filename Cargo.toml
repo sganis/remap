@@ -11,6 +11,8 @@ gst = { git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", package="
 gst-video = { git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", package="gstreamer-video" }
 crossterm = "0.25.0"
 tokio = { version = "1.24.2", features = ["full"] }
+enigo = { path = "../enigo" }
+
 # glib = "0.16.7"
 # gst = { version = "0.19.5", package = "gstreamer" }
 # gtk = "0.16.2"

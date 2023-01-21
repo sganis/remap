@@ -17,12 +17,15 @@ done
 export DISPLAY=$DISPLAY
 $APP &
 PID=$(echo $!)
+echo "PID=$PID"
 
-ID=$(xwininfo -root -tree |grep $APP |head -1 |awk '{print $1}')
+# ID=$(xwininfo -root -tree |grep $APP |head -1 |awk '{print $1}')
+ID=$(xdotool search --pid $PID)
 while [ -z "$ID" ]; do
     echo waiting for app
     sleep 1
-    ID=$(xwininfo -root -tree |grep $APP |head -1 |awk '{print $1}')
+    # ID=$(xwininfo -root -tree |grep $APP |head -1 |awk '{print $1}')
+    ID=$(xdotool search --pid $PID)
 done
 echo $ID
 
@@ -33,5 +36,9 @@ ID="xid=$ID"
 gst-launch-1.0 ximagesrc $ID use-damage=0 ! queue ! videoconvert \
     ! video/x-raw,framerate=30/1 ! jpegenc ! multipartmux \
     ! tcpserversink host=127.0.0.1 port=7001
+
+# gst-launch-1.0 ximagesrc $ID use-damage=0 ! queue ! videoconvert \
+#     ! video/x-raw,framerate=30/1 ! jpegenc ! multipartmux \
+#     ! udpsink host=127.0.0.1 port=7001
 
 
