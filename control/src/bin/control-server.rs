@@ -11,15 +11,16 @@ struct Keyboard {
 
 //#[allow(dead_code)]
 impl Keyboard {
-    pub fn new(window: i32) -> Self {
-        let mut e = Enigo::new();
-        e.set_window(window);
+    pub fn new() -> Self {
         Self { 
-            enigo: Some(e),
+            enigo: Some(Enigo::new()),
         }
     }
     pub fn focus(&mut self) {
         self.enigo.as_mut().unwrap().window_focus();
+    }
+    pub fn set_window(&mut self, window: i32) {
+        self.enigo.as_mut().unwrap().set_window(window);
     }
     pub fn get_window_pid(&mut self) -> i32 {
         self.enigo.as_mut().unwrap().window_pid()
@@ -61,13 +62,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
     loop {
         let (mut socket, _) = listener.accept().await?;
         println!("Connected to client");
+        
+        let pid = 16007;
+        let mut keyboard = Keyboard::new();
+        let xid = keyboard.search_window_by_pid(pid);
+        println!("window xid: {}", xid);
+        
         let window : i32 = 2097165; // hardcoded
-        let mut keyboard = Keyboard::new(window);
+        let mut keyboard = Keyboard::new();
+        keyboard.set_window(window);
         keyboard.focus();
         let pid = keyboard.get_window_pid();
         println!("window pid: {}", pid);
-        //let xid = keyboard.search_window_by_pid(pid);
-        //println!("window xid: {}", xid);
         
 
         tokio::spawn(async move {
