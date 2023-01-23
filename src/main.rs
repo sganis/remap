@@ -158,21 +158,21 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
 
     //let streams_list = gtk::TextView::new();
     //streams_list.set_editable(false);
-    let pipeline_weak = playbin.downgrade();
-    //let streams_list_weak = glib::SendWeakRef::from(streams_list.downgrade());
+    // let pipeline_weak = playbin.downgrade();
+    // //let streams_list_weak = glib::SendWeakRef::from(streams_list.downgrade());
 
-    let bus = playbin.bus().unwrap();
+    // let bus = playbin.bus().unwrap();
 
-    #[allow(clippy::single_match)]
-    bus.connect_message(Some("application"), move |_, msg| match msg.view() {
-        gst::MessageView::Application(application) => {
-            let pipeline = match pipeline_weak.upgrade() {
-                Some(pipeline) => pipeline,
-                None => return,
-            };
-        }
-        _ => unreachable!(),
-    });
+    // #[allow(clippy::single_match)]
+    // bus.connect_message(Some("application"), move |_, msg| match msg.view() {
+    //     gst::MessageView::Application(application) => {
+    //         let pipeline = match pipeline_weak.upgrade() {
+    //             Some(pipeline) => pipeline,
+    //             None => return,
+    //         };
+    //     }
+    //     _ => unreachable!(),
+    // });
 
     let vbox = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     vbox.pack_start(&video_window, true, true, 0);
@@ -218,8 +218,10 @@ pub fn main() {
         .build()
         .expect("Could not create sink element");    
 
+
+    
     // Create the empty pipeline
-    let pipeline = gst::Pipeline::builder().name("test-pipeline").build();
+    let pipeline = gst::Pipeline::builder().name("pipeline").build();
 
     // Build the pipeline
     pipeline.add_many(&[&source, &demuxer, &decoder, &sink]).unwrap();
@@ -263,7 +265,10 @@ pub fn main() {
         }
     });
 
-    // // test video
+    // attach video to window
+    let window = create_ui(&sink);
+
+    // // attache test video
     // let uri = "https://www.freedesktop.org/software/gstreamer-sdk/\
     //             data/media/sintel_trailer-480p.webm";
     // let playbin = gst::ElementFactory::make("playbin")
@@ -272,8 +277,6 @@ pub fn main() {
     // let window = create_ui(&playbin);
     // playbin.set_state(gst::State::Playing).unwrap();
     
-    let window = create_ui(&sink);
-
     let bus = pipeline.bus().unwrap();
     bus.add_signal_watch();
 
