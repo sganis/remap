@@ -11,5 +11,5 @@ crossterm = { version = "0.23", features = ["event-stream"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # enigo = { git = "https://github.com/sganis/enigo" }
-# enigo = { path = "../../enigo" }
+enigo = { path = "../../enigo" }
 
