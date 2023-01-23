@@ -334,8 +334,7 @@ pub fn main() {
         }
     });
 
-    playbin
-        .set_state(gst::State::Playing)
+    playbin.set_state(gst::State::Playing)
         .expect("Unable to set the playbin to the `Playing` state");
 
     gtk::main();

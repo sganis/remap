@@ -3,10 +3,6 @@ use gdk::prelude::*;
 use gst_video::prelude::*;
 use gtk::prelude::*;
 
-// Custom struct to keep our window reference alive
-// and to store the timeout id so that we can remove
-// it from the main context again later and drop the
-// references it keeps inside its closures
 struct AppWindow {
     main_window: gtk::Window,
     timeout_id: Option<glib::SourceId>,
@@ -27,13 +23,8 @@ impl Drop for AppWindow {
         }
     }
 }
-
-// This creates all the GTK+ widgets that compose our application, and registers the callbacks
 fn create_ui(playbin: &gst::Element) -> AppWindow {
     let main_window = gtk::Window::new(gtk::WindowType::Toplevel);
-    
-    main_window.set_events(gdk::EventMask::ALL_EVENTS_MASK);
-
     main_window.connect_delete_event(|_, _| {
         gtk::main_quit();
         Inhibit(false)
@@ -48,7 +39,6 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
             },
             None => {},
         }
-
         let result = glib::value::Value::from_type(glib::types::Type::BOOL);
         Some(result)
     });
@@ -67,10 +57,29 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
         Some(result)
     });
 
-    
+    let pipeline = playbin.clone();
+
+    // // Update the UI (seekbar) every second
+    let timeout_id = glib::timeout_add_seconds_local(1, move || {
+        let pipeline = &pipeline;
+        if let Some(dur) = pipeline.query_duration::<gst::ClockTime>() {
+            if let Some(pos) = pipeline.query_position::<gst::ClockTime>() {
+                //lslider.block_signal(&slider_update_signal_id);
+                //lslider.set_value(pos.seconds() as f64);
+                //lslider.unblock_signal(&slider_update_signal_id);
+            }
+        }
+
+        Continue(true)
+    });
+
     let video_window = gtk::DrawingArea::new();
-    let video_overlay = playbin.clone().dynamic_cast::<gst_video::VideoOverlay>().unwrap();
-    
+
+    let video_overlay = playbin
+        .clone()
+        .dynamic_cast::<gst_video::VideoOverlay>()
+        .unwrap();
+
     video_window.connect_realize(move |video_window| {
         let video_overlay = &video_overlay;
         let gdk_window = video_window.window().unwrap();
@@ -147,20 +156,35 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
         }
     });
 
+    //let streams_list = gtk::TextView::new();
+    //streams_list.set_editable(false);
+    let pipeline_weak = playbin.downgrade();
+    //let streams_list_weak = glib::SendWeakRef::from(streams_list.downgrade());
+
+    let bus = playbin.bus().unwrap();
+
+    #[allow(clippy::single_match)]
+    bus.connect_message(Some("application"), move |_, msg| match msg.view() {
+        gst::MessageView::Application(application) => {
+            let pipeline = match pipeline_weak.upgrade() {
+                Some(pipeline) => pipeline,
+                None => return,
+            };
+        }
+        _ => unreachable!(),
+    });
 
     let vbox = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     vbox.pack_start(&video_window, true, true, 0);
     main_window.add(&vbox);
-    main_window.set_default_size(640, 480);
-
+    main_window.set_default_size(1000, 800);
     main_window.show_all();
 
     AppWindow {
         main_window,
-        timeout_id: None, //Some(timeout_id),
+        timeout_id: Some(timeout_id),
     }
 }
-
 
 pub fn main() {
     // Initialize GTK
@@ -204,8 +228,8 @@ pub fn main() {
     source.link(&demuxer).expect("Elements source-demuxer could not be linked.");
     decoder.link(&sink).expect("Elements decoder-sink could not be linked.");
 
-   // Connect the pad-added signal
-   demuxer.connect_pad_added(move |src, src_pad| {
+    // Connect the pad-added signal
+    demuxer.connect_pad_added(move |src, src_pad| {
         println!("Received new pad {} from {}", src_pad.name(), src.name());
 
         let sink_pad = decoder.static_pad("sink")
@@ -239,17 +263,33 @@ pub fn main() {
         }
     });
 
+    // // test video
+    // let uri = "https://www.freedesktop.org/software/gstreamer-sdk/\
+    //             data/media/sintel_trailer-480p.webm";
+    // let playbin = gst::ElementFactory::make("playbin")
+    //     .property("uri", uri).build().unwrap();
+    
+    // let window = create_ui(&playbin);
+    // playbin.set_state(gst::State::Playing).unwrap();
+    
     let window = create_ui(&sink);
 
     let bus = pipeline.bus().unwrap();
     bus.add_signal_watch();
 
     let pipeline_weak = pipeline.downgrade();
-    bus.connect_message(None, move |_, msg| {
-        let pipeline = match pipeline_weak.upgrade() {
-            Some(pipeline) => pipeline,
-            None => return,
-        };
+    let sink_weak = sink.downgrade();
+
+    bus.connect_message(None, move |_, msg| {        
+        let pipeline = pipeline_weak.upgrade();
+        let sink = sink_weak.upgrade();
+        if pipeline.is_none() && sink.is_none() {
+            return;
+        }
+        let pipeline = pipeline.unwrap();
+        let sink = sink.unwrap();
+
+        //println!("bus message: {:?} ", msg.view());
 
         match msg.view() {
             //  This is called when an End-Of-Stream message is posted on the bus.
@@ -259,8 +299,7 @@ pub fn main() {
                 pipeline
                     .set_state(gst::State::Ready)
                     .expect("Unable to set the pipeline to the `Ready` state");
-            }
-
+            },
             // This is called when an error message is posted on the bus
             gst::MessageView::Error(err) => {
                 println!(
@@ -269,25 +308,32 @@ pub fn main() {
                     err.error(),
                     err.debug()
                 );
-            }
+            },
             // This is called when the pipeline changes states. We use it to
             // keep track of the current state.
             gst::MessageView::StateChanged(state_changed) => {
                 if state_changed.src().map(|s| s == &pipeline).unwrap_or(false) {
                     println!("State set to {:?}", state_changed.current());
                 }
-            }
-            _ => (),
+            },
+            gst::MessageView::Tag(m) => {
+                println!("TAG: {:?}", m);
+            },
+            gst::MessageView::Element(m) => {
+                // println!("ELEMENT: {:?}", m);
+            },
+            m => {
+                println!("BUS: {:?}", m);
+            },
         }
     });
 
-    pipeline.set_state(gst::State::Playing)
-        .expect("Unable to set the pipeline to the `Playing` state");
+    //sink.set_state(gst::State::Playing).expect("Unable to set the pipeline to the `Playing` state");
+    pipeline.set_state(gst::State::Playing).expect("Unable to set the pipeline to the `Playing` state");
 
     gtk::main();
 
     window.hide();
-    pipeline.set_state(gst::State::Null)
-        .expect("Unable to set the pipeline to the `Null` state");
+    pipeline.set_state(gst::State::Null).expect("Unable to set the pipeline to the `Null` state");
     bus.remove_signal_watch();
 }
