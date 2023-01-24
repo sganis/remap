@@ -124,8 +124,7 @@ int main(int argc, char *argv[])
         return -1;
     }
     sin.sin_port = htons(22);
-    if(connect(sock, (struct sockaddr*)(&sin),
-               sizeof(struct sockaddr_in)) != 0) {
+    if(connect(sock, (struct sockaddr*)(&sin), sizeof(struct sockaddr_in)) != 0) {
         fprintf(stderr, "failed to connect!\n");
         return -1;
     }
@@ -219,8 +218,7 @@ int main(int argc, char *argv[])
         goto shutdown;
     }
     sockopt = 1;
-    setsockopt(listensock, SOL_SOCKET, SO_REUSEADDR, &sockopt,
-               sizeof(sockopt));
+    setsockopt(listensock, SOL_SOCKET, SO_REUSEADDR, &sockopt, sizeof(sockopt));
     sinlen = sizeof(sin);
     if(-1 == bind(listensock, (struct sockaddr *)&sin, sinlen)) {
         perror("bind");
@@ -254,7 +252,6 @@ int main(int argc, char *argv[])
         shost, sport, remote_desthost, remote_destport);
  
     channel = libssh2_channel_direct_tcpip_ex(session, remote_desthost,
-
         remote_destport, shost, sport);
     if(!channel) {
         fprintf(stderr, "Could not open the direct-tcpip channel!\n"

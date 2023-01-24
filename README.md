@@ -1,3 +1,2 @@
 # remap
-
-Remot App
+Remote App
