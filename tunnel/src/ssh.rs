@@ -1,5 +1,6 @@
 use std::io::{Read, Write};
-use std::net::{TcpStream, TcpListener, ToSocketAddrs};
+use std::net::{TcpStream, TcpListener, SocketAddr, ToSocketAddrs};
+use socket2::{Socket, Domain, Type};
 use std::time::Duration;
 use ssh2::{Session, Sftp, FileStat};
 use std::path::{PathBuf, Path};
@@ -232,7 +233,14 @@ impl Ssh {
     pub fn direct_tcpip(&mut self, 
         shost: &str, sport: u16, rhost: &str, rport: u16) -> Result<(), String> {
         
-        let listener = TcpListener::bind(format!("{shost}:{sport}")).unwrap();
+        //let listener = TcpListener::bind(format!("{shost}:{sport}")).unwrap();
+        let socket = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
+        socket.set_reuse_address(true);
+        let address: SocketAddr = format!("{shost}:{sport}").parse().unwrap();
+        let address = address.into();
+        socket.bind(&address).unwrap();
+        socket.listen(2).unwrap();        
+        let listener: TcpListener = socket.into();
         
         println!("Waiting for connections in {shost}:{sport}...");
         let mut forwarder = match listener.accept() {
@@ -252,101 +260,42 @@ impl Ssh {
         };  
         let mut buf = [0u8; 3000];
         
-        loop {            
-            let len = forwarder.read(&mut buf).unwrap();
-            println!("bytes recieved: {len}");
-            let mut wr = 0 as usize;
-            while wr < len {
-                let i = match channel.write(&buf[wr..]) {
-                    Ok(i) => i,
-                    Err(e) => return Err(format!("channel_write: {:?}",e))
-                };
-                wr += i;
-            }
-            loop {
-                let len = match channel.read(&mut buf) {
-                    Ok(len) => len,
-                    Err(e) => {
-                        println!("channel_write: {:?}",e);
-                        break;
-                    },
-                };
-                wr = 0 as usize;
-                while wr < len {
-                    let i = match forwarder.write(&buf[wr..]) { 
-                        Ok(i) => i,
-                        Err(e) => return Err(format!("forwarder write: {:?}",e)),
-                    };
-                    wr += i;
-                }
-                if channel.eof() {
-                    return Err(format!("server disconnected"));
-                }
-            }
-
-
-        }
-        // while(1) {
-        //     FD_ZERO(&fds);
-        //     FD_SET(forwardsock, &fds);
-        //     tv.tv_sec = 0;
-        //     tv.tv_usec = 100000;
-        //     rc = select(forwardsock + 1, &fds, NULL, NULL, &tv);
-        //     if(-1 == rc) {
-        //         perror("select");
-        //         goto shutdown;
+        // loop {            
+        //     let len = forwarder.read(&mut buf).unwrap();
+        //     println!("bytes recieved: {len}");
+        //     let mut wr = 0 as usize;
+        //     while wr < len {
+        //         let i = match channel.write(&buf[wr..]) {
+        //             Ok(i) => i,
+        //             Err(e) => return Err(format!("channel_write: {:?}",e))
+        //         };
+        //         wr += i;
         //     }
-        //     if(rc && FD_ISSET(forwardsock, &fds)) {
-        //         len = recv(forwardsock, buf, sizeof(buf), 0);
-        //         if(len < 0) {
-        //             perror("read");
-        //             goto shutdown;
-        //         }
-        //         else if(0 == len) {
-        //             fprintf(stderr, "The client at %s:%d disconnected!\n", shost,
-        //                 sport);
-        //             goto shutdown;
-        //         }
-        //         wr = 0;
-        //         while(wr < len) {
-        //             i = libssh2_channel_write(channel, buf + wr, len - wr);
-    
-        //             if(LIBSSH2_ERROR_EAGAIN == i) {
-        //                 continue;
-        //             }
-        //             if(i < 0) {
-        //                 fprintf(stderr, "libssh2_channel_write: %d\n", i);
-        //                 goto shutdown;
-        //             }
+        //     loop {
+        //         let len = match channel.read(&mut buf) {
+        //             Ok(len) => len,
+        //             Err(e) => {
+        //                 println!("channel_write: {:?}",e);
+        //                 break;
+        //             },
+        //         };
+        //         wr = 0 as usize;
+        //         while wr < len {
+        //             let i = match forwarder.write(&buf[wr..]) { 
+        //                 Ok(i) => i,
+        //                 Err(e) => return Err(format!("forwarder write: {:?}",e)),
+        //             };
         //             wr += i;
         //         }
-        //     }
-        //     while(1) {
-        //         len = libssh2_channel_read(channel, buf, sizeof(buf));
-    
-        //         if(LIBSSH2_ERROR_EAGAIN == len)
-        //             break;
-        //         else if(len < 0) {
-        //             fprintf(stderr, "libssh2_channel_read: %d", (int)len);
-        //             goto shutdown;
-        //         }
-        //         wr = 0;
-        //         while(wr < len) {
-        //             i = send(forwardsock, buf + wr, len - wr, 0);
-        //             if(i <= 0) {
-        //                 perror("write");
-        //                 goto shutdown;
-        //             }
-        //             wr += i;
-        //         }
-        //         if(libssh2_channel_eof(channel)) {
-    
-        //             fprintf(stderr, "The server at %s:%d disconnected!\n",
-        //                 remote_desthost, remote_destport);
-        //             goto shutdown;
+        //         if channel.eof() {
+        //             return Err(format!("server disconnected"));
         //         }
         //     }
+
+
         // }
+        
+    
 
         
         Ok(())

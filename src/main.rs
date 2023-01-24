@@ -1,4 +1,8 @@
 use std::{ops, os::raw::c_void, process};
+use std::process::Command;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+use std::net::TcpListener;
 use gdk::prelude::*;
 use gst_video::prelude::*;
 use gtk::prelude::*;
@@ -185,8 +189,45 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
         timeout_id: Some(timeout_id),
     }
 }
-
+fn port_is_listening(port: u16) -> bool {
+    match TcpListener::bind(("127.0.0.1", port)) {
+        Ok(_) => false,
+        Err(_) => true,
+    }
+}
 pub fn main() {
+    use std::thread;
+    use std::time::Duration;
+    use std::sync::mpsc::channel;
+    
+    // make ssh connection
+    let (tx,rx) = channel();
+
+    // Spawn ssh tunnel thread
+    thread::spawn(move|| {
+        if port_is_listening(7001) {
+            println!("Tunnel exists, reusing...");            
+            tx.send(()).expect("Could not send signal on channel.");
+        } else {
+            println!("Connecting...");
+            let _handle = Command::new("ssh")
+                .raw_arg("-N -L 7001:localhost:7001 -L 7002:localhost:7002 san@192.168.100.202")
+                .spawn().unwrap();
+            while !port_is_listening(7001) {
+                thread::sleep(Duration::from_millis(500));
+            }
+            tx.send(()).expect("Could not send signal on channel.");
+            // loop {
+            //     println!("SSH working...");
+            //     thread::sleep(Duration::from_millis(5000));
+            // }
+        }
+    });
+    
+    // wait for signal
+    rx.recv().expect("Could not receive from channel.");
+    println!("Tunnel Ok.");
+    
     // Initialize GTK
     if let Err(err) = gtk::init() {
         eprintln!("Failed to initialize GTK: {}", err);
@@ -214,6 +255,7 @@ pub fn main() {
         .build()
         .expect("Could not create decoder element");    
     let sink = gst::ElementFactory::make("glimagesink")
+    //let sink = gst::ElementFactory::make("d3dvideosink")
         .name("sink")
         .build()
         .expect("Could not create sink element");    
@@ -306,7 +348,7 @@ pub fn main() {
             // This is called when an error message is posted on the bus
             gst::MessageView::Error(err) => {
                 println!(
-                    "Error from {:?}: {} ({:?})",
+                    "ERROR: {:?}: {} ({:?})",
                     err.src().map(|s| s.path_string()),
                     err.error(),
                     err.debug()

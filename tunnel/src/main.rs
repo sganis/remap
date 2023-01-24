@@ -20,7 +20,7 @@ fn main() -> Result<(), String>{
             let output = ssh.run("whoami").unwrap();
             println!("{}", output);
 
-            match ssh.direct_tcpip("localhost", 7001, "localhost", 7001) {
+            match ssh.direct_tcpip("127.0.0.1", 7001, "127.0.0.1", 7001) {
                 Ok(_) => (),
                 Err(e) => println!("Error: {e}"),
             }

@@ -118,8 +118,7 @@ static gboolean draw_cb (GtkWidget *widget, cairo_t *cr, CustomData *data) {
   return FALSE;
 }
 
-static gboolean key_press_cb (GtkWidget *widget, GdkEventKey *event, 
-    gpointer data) {
+static gboolean key_press_cb (GtkWidget *widget, GdkEventKey *event, gpointer data) {
     g_print("key press: %d\n", event->keyval);
     if (event->keyval == GDK_KEY_space){
         g_print("SPACE KEY PRESSED!\n");
@@ -127,8 +126,7 @@ static gboolean key_press_cb (GtkWidget *widget, GdkEventKey *event,
     }
     return FALSE;
 }
-static gboolean key_release_cb (GtkWidget *widget, GdkEventKey *event, 
-    gpointer data) {
+static gboolean key_release_cb (GtkWidget *widget, GdkEventKey *event, gpointer data) {
     g_print("key release: %d\n", event->keyval);
     // if (event->keyval == GDK_KEY_space){
     //     g_print("SPACE KEY PRESSED!\n");
@@ -136,8 +134,7 @@ static gboolean key_release_cb (GtkWidget *widget, GdkEventKey *event,
     // }
     return TRUE;
 }
-static gboolean button_press_cb (GtkWidget *widget, GdkEventButton *event, 
-    gpointer data) {
+static gboolean button_press_cb (GtkWidget *widget, GdkEventButton *event, gpointer data) {
     g_print("click: %f, %f\n", event->x, event->y);
     return TRUE;
 }

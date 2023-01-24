@@ -6,6 +6,7 @@ use std::os::windows::process::CommandExt;
 pub fn run(cmd: &str) -> (String, String, i32) {
     #[cfg(target_os = "windows")]
     let r = Command::new("cmd").arg("/c").raw_arg(cmd).output().unwrap();
+    
     #[cfg(not(target_os = "windows"))]
     let r = Command::new("sh").arg("-c").arg(cmd).output().unwrap();
 
