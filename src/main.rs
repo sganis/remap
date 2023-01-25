@@ -47,13 +47,44 @@ fn create_ui(playbin: &gst::Element, stream: &mut TcpStream) -> AppWindow {
             Some(event) => {
                 println!("Key: {:?}, {:?}", event.keyval(), event.state());
                 if let Some(c) = event.keyval().to_unicode() {
-                    //let stream = st.borrow_mut();
-                    println!("{}", c);
+                    println!("unicode: {}", c);
+                    
+                    let k = match event.keyval() {
+                        gdk::keys::constants::Return => {
+                            stream.as_ref().write(b"\n").unwrap();
+                            let mut data = [0; 1]; // using 6 byte buffer
+                            match stream.as_ref().read(&mut data) {
+                                Ok(_) => {
+                                    let c = String::from_utf8_lossy(&data[..]);
+                                    if c == "K" {
+                                        println!("ok");
+                                    } else {
+                                        println!("Unexpected reply: {}", c);
+                                    }
+                                },
+                                Err(e) => {
+                                    println!("Failed to receive data: {}", e);
+                                }
+                            }
+                            "Return"
+                        },
+                        _ => "Unknown",
+                    };
+                   // println!("match: {}", k);
+                    
+                    
                     if let Err(e) = stream.as_ref().write(&[c as u8]) {
                         println!("Key send error: {e}");
                     }
                     //stream.flush().unwrap();
-                };
+                } else {
+                    let c = match event.keyval() {
+                        gdk::keys::constants::Return => "Enter",
+                        _ => "Unknown",
+                    };
+                    println!("{}", c);
+                    
+                }
                 
                 
             },
@@ -221,7 +252,8 @@ fn port_is_listening(port: u16) -> bool {
 pub fn main() {
     
     let user = "san";
-    let host = "166.87.201.134";
+    // let host = "166.87.201.134";
+    let host = "192.168.100.202";
     let port: u16 = 7001;
     let port2: u16 = 7002;
 
@@ -236,7 +268,7 @@ pub fn main() {
         } else {
             println!("Connecting...");
             let _handle = Command::new("ssh")
-                .raw_arg(format!("-N -L {port}:127.0.0.1:{port} -L {port2}:127.0.0.1:{port2} {user}@{host}"))
+                .raw_arg(format!("-oStrictHostkeyChecking=no -N -L {port}:127.0.0.1:{port} -L {port2}:127.0.0.1:{port2} {user}@{host}"))
                 .spawn().unwrap();
             while !port_is_listening(port) {
                 std::thread::sleep(std::time::Duration::from_millis(200));
