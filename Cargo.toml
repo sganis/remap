@@ -11,8 +11,6 @@ gst = { git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", package="
 gtk = { git = "https://github.com/gtk-rs/gtk3-rs"}
 gdk = { git = "https://github.com/gtk-rs/gtk3-rs", package="gdk" }
 gst-video = { git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", package="gstreamer-video" }
-crossterm = "0.25.0"
-# tokio = { version = "1.24.2", features = ["full"] }
 
 [target.'cfg(unix)'.dependencies]
 enigo = { git = "https://github.com/sganis/enigo" }

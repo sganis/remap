@@ -39,54 +39,52 @@ fn create_ui(playbin: &gst::Element, stream: &mut TcpStream) -> AppWindow {
     let stream_clone = stream.try_clone().unwrap();
     let stream = Arc::new(stream_clone);
 
-    // clone the handle to s and move it into the closure
-    //let st = Arc::clone(&stream);
     main_window.connect("key_press_event", false, move |values| {
         let raw_event = &values[1].get::<gdk::Event>().unwrap();
         match raw_event.downcast_ref::<gdk::EventKey>() {
-            Some(event) => {
-                println!("Key: {:?}, {:?}", event.keyval(), event.state());
-                if let Some(c) = event.keyval().to_unicode() {
-                    println!("unicode: {}", c);
-                    
-                    let k = match event.keyval() {
-                        gdk::keys::constants::Return => {
-                            stream.as_ref().write(b"\n").unwrap();
-                            let mut data = [0; 1]; // using 6 byte buffer
-                            match stream.as_ref().read(&mut data) {
-                                Ok(_) => {
-                                    let c = String::from_utf8_lossy(&data[..]);
-                                    if c == "K" {
-                                        println!("ok");
-                                    } else {
-                                        println!("Unexpected reply: {}", c);
-                                    }
-                                },
-                                Err(e) => {
-                                    println!("Failed to receive data: {}", e);
-                                }
+            Some(event) => {            
+                let name = event.keyval().name().unwrap().as_str().to_string();
+                println!("Key: {:?}, {:?}, unicode: {:?}, name: {:?}", 
+                    event.keyval(), 
+                    event.state(), 
+                    event.keyval().to_unicode(), 
+                    name);
+
+                if name == "Return" {
+                    stream.as_ref().write(b"Return").unwrap();
+                    let mut data = [0; 1]; // using 6 byte buffer
+                    match stream.as_ref().read(&mut data) {
+                        Ok(_) => {
+                            let c = String::from_utf8_lossy(&data[..]);
+                            if c == "OK" {
+                                println!("ok");
+                            } else {
+                                println!("Unexpected reply: {}", c);
                             }
-                            "Return"
                         },
-                        _ => "Unknown",
-                    };
-                   // println!("match: {}", k);
-                    
-                    
-                    if let Err(e) = stream.as_ref().write(&[c as u8]) {
-                        println!("Key send error: {e}");
+                        Err(e) => {
+                            println!("Failed to receive data: {}", e);
+                        }
                     }
-                    //stream.flush().unwrap();
+                } else if name == "BackSpace" || name == "Delete" ||
+                        name == "Page_Down" || name == "Page_Up" ||
+                        name == "Up" || name == "Down" ||
+                        name == "Left" || name == "Right" ||
+                        name == "Home" || name == "End" ||
+                        name == "Tab" || name == "Escape" {
+                    stream.as_ref().write(name.as_bytes()).unwrap();
+                    stream.as_ref().flush().unwrap();
                 } else {
-                    let c = match event.keyval() {
-                        gdk::keys::constants::Return => "Enter",
-                        _ => "Unknown",
-                    };
-                    println!("{}", c);
-                    
-                }
-                
-                
+                    match event.keyval().to_unicode() {
+                        Some(k) => {
+                            stream.as_ref().write(&[k as u8]).unwrap();
+                            stream.as_ref().flush().unwrap();        
+                        },
+                        None => {
+                            println!("key not supported: {name}");
+                        }
+                    }                   
+                }                
             },
             None => {},
         }
