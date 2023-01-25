@@ -1,7 +1,12 @@
 use std::error::Error;
 use std::io::{Read,Write};
 use std::net::TcpListener;
+use std::process::Command;
 use enigo::{Enigo, Key, KeyboardControllable};
+
+// #[path = "../command.rs"]
+// mod command;
+
 
 //#[derive(Default)]
 struct Keyboard {
@@ -50,55 +55,127 @@ impl Keyboard {
     }
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
-    let addr = std::env::args().nth(1)
-        .unwrap_or_else(|| "127.0.0.1:7002".to_string());
+fn is_display_server_running(display: i32) -> bool {
+    let cmd = "ps aux |grep Xvfb |grep \":{display}\" >/dev/null";
+    let r = Command::new("sh").arg("-c").arg(cmd).output().expect("Could not run ps command");
+    r.status.code().unwrap() == 0
+}
 
-
-    
-
-
-    let listener = TcpListener::bind(&addr)?;
-    println!("Listening on: {}", addr);
-
-    loop {
-        let (mut socket, _) = listener.accept()?;
-        println!("Connected to client");
-        
-        let pid = 16007;
-        let mut keyboard = Keyboard::new();
-        let xid = keyboard.search_window_by_pid(pid);
-        println!("window xid: {}", xid);
-        
-        let window : i32 = 2097165; // hardcoded
-    
-        let mut keyboard = Keyboard::new();
-        keyboard.set_window(window);
-        keyboard.focus();
-        let pid = keyboard.get_window_pid();
-        println!("window pid: {}", pid);
-        
-        loop {
-            let mut buf = vec![0; 32];            
-            let n = socket.read(&mut buf).expect("failed to read data from socket");
-            let c = String::from_utf8_lossy(&buf);
-            let c = c.trim_matches(char::from(0));
-            print!(" key recieved: {:?}", c);
-            std::io::stdout().flush().unwrap();
-
-            // send key to window
-            keyboard.key(&c);
-
-
-            if n == 0 {
-                break;
-            }
-            if c == "Return" {
-                socket.write(b"OK").expect("failed to write data to socket");
-            }
-        }
-        break
+fn find_window_id(pid: u32) -> u32 {
+    //let cmd = format!("xdotool search --pid {pid}");
+    //println!("{}",cmd);
+    let r = Command::new("xdotool")
+        .arg("search")
+        .arg("--pid")
+        .arg(pid.to_string())
+        .output()
+        .expect("Could not run find window id command");
+    let stdout = String::from_utf8_lossy(&r.stdout).trim().to_string();
+    // let stderr = String::from_utf8_lossy(&r.stderr).trim().to_string();
+    // println!("stdout: {stdout}");
+    // println!("stderr: {stderr}");
+    match stdout.parse::<u32>() {
+        Ok(wid) => wid,
+        Err(_) => 0,
     }
+}
+
+fn main() -> Result<(), Box<dyn Error>> {
+    // get params
+    let display = std::env::args().nth(1).unwrap_or_else(|| "101".to_string());
+    let display = display.parse::<i32>().unwrap();
+    let app = std::env::args().nth(2).unwrap_or_else(|| "xterm".to_string());
+    let port = 7001;
+    let addr = format!("127.0.0.1:{port}");
+
+    let display_cmd = format!(" +extension GLX +extension Composite -screen 0 8192x4096x24+32 -nolisten tcp -noreset -auth /run/user/1000/gdm/Xauthority -dpi 96 :{display}");
+    println!("cmd: {display_cmd}");
+    
+    // run display_server
+    let r = Command::new("Xvfb")
+        .args(["+extension","GLX","+extension","Composite","-screen","0",
+            "8192x4096x24+32","-nolisten","tcp","-noreset",
+            "-auth","/run/user/1000/gdm/Xauthority","-dpi","96",
+            &format!(":{display}")])
+        .spawn()
+        .expect("display failed to start");
+    println!("display pid: {}", r.id());
+    // std::thread::sleep(std::time::Duration::from_millis(1000));
+
+    // wait for it
+    while !is_display_server_running(display) {
+        println!("Waiging display...{:?}", r);
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }    
+    
+    // // run app and get pid
+    let r = Command::new(app)
+        .env("DISPLAY",format!(":{display}"))
+        .spawn()
+        .expect("Could not run app");
+    println!("app pid: {}", r.id());
+    let pid = r.id();
+    std::thread::sleep(std::time::Duration::from_millis(1000));
+
+    // find window ID,. wait for it
+    let mut wid = find_window_id(pid);    
+    println!("window id: {}", wid);
+
+    // while wid == 0 {
+    //     println!("Waiging app...");
+    //     std::thread::sleep(std::time::Duration::from_millis(200));
+    //     wid = find_window_id(pid);
+    // }    
+        
+    // // run video server
+    // let video_server = format!(
+    //     r#"gst-launch-1.0 ximagesrc {wid} use-damage=0 \
+    //     ! queue ! videoconvert ! video/x-raw,framerate=24/1 \
+    //     ! jpegenc ! multipartmux \
+    //     ! tcpserversink host=127.0.0.1 port=7001"#);
+    
+
+    // let listener = TcpListener::bind(&addr)?;
+    // println!("Listening on: {}", addr);
+
+    // loop {
+    //     let (mut socket, _) = listener.accept()?;
+    //     println!("Connected to client");
+        
+    //     let pid = 16007;
+    //     let mut keyboard = Keyboard::new();
+    //     let xid = keyboard.search_window_by_pid(pid);
+    //     println!("window xid: {}", xid);
+        
+    //     let window : i32 = 2097165; // hardcoded
+    
+    //     let mut keyboard = Keyboard::new();
+    //     keyboard.set_window(window);
+    //     keyboard.focus();
+    //     let pid = keyboard.get_window_pid();
+    //     println!("window pid: {}", pid);
+        
+    //     loop {
+    //         let mut buf = vec![0; 32];            
+    //         let n = socket.read(&mut buf).expect("failed to read data from socket");
+    //         let c = String::from_utf8_lossy(&buf);
+    //         let c = c.trim_matches(char::from(0));
+    //         print!(" key recieved: {:?}", c);
+    //         std::io::stdout().flush().unwrap();
+
+    //         // send key to window
+    //         keyboard.key(&c);
+
+
+    //         if n == 0 {
+    //             break;
+    //         }
+    //         if c == "Return" {
+    //             socket.write(b"OK").expect("failed to write data to socket");
+    //         }
+    //     }
+    //     break
+    // }
     Ok(())
 }
 

@@ -14,7 +14,17 @@ pub fn run(cmd: &str) -> (String, String, i32) {
     let stderr = String::from_utf8_lossy(&r.stderr).trim().to_string();
     (stdout, stderr, r.status.code().unwrap())
 }
+pub fn run_args(cmd: &str, args: &str) -> (String, String, i32) {
+    #[cfg(target_os = "windows")]
+    let r = Command::new("cmd").arg("/c").raw_arg(cmd).output().unwrap();
+    
+    #[cfg(not(target_os = "windows"))]
+    let r = Command::new(cmd).arg(cmd).output().unwrap();
 
+    let stdout = String::from_utf8_lossy(&r.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&r.stderr).trim().to_string();
+    (stdout, stderr, r.status.code().unwrap())
+}
 #[cfg(test)]
 mod tests {
     use super::*;
