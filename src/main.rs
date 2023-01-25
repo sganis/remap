@@ -1,11 +1,15 @@
 use std::{ops, os::raw::c_void, process};
+use std::io::{Read, Write};
 use std::process::Command;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
-use std::net::TcpListener;
+use std::net::{TcpListener, TcpStream};
 use gdk::prelude::*;
 use gst_video::prelude::*;
 use gtk::prelude::*;
+use std::rc::Rc;
+use std::cell::RefCell;
+use std::sync::{Arc, Mutex};
 
 struct AppWindow {
     main_window: gtk::Window,
@@ -28,18 +32,38 @@ impl Drop for AppWindow {
     }
 }
 fn create_ui(playbin: &gst::Element) -> AppWindow {
+
+
+    let stream = TcpStream::connect("127.0.0.1:7002")
+        .expect("Cannot connect to input port");
+    
+        // wrap it to mutate it in event
+    let stream = Arc::new(stream);
+    //let stream : Arc<Mutex<String>> = Arc::new(Mutex::new(&stream));
+
     let main_window = gtk::Window::new(gtk::WindowType::Toplevel);
     main_window.connect_delete_event(|_, _| {
         gtk::main_quit();
         Inhibit(false)
     });
 
-    main_window.connect("key_press_event", false, |values| {
+    // clone the handle to s and move it into the closure
+    //let st = Arc::clone(&stream);
+    main_window.connect("key_press_event", false, move |values| {
         let raw_event = &values[1].get::<gdk::Event>().unwrap();
         match raw_event.downcast_ref::<gdk::EventKey>() {
             Some(event) => {
-                println!("Key name: {:?}", event.keyval());
-                println!("Modifier: {:?}", event.state());
+                println!("Key: {:?}, {:?}", event.keyval(), event.state());
+                if let Some(c) = event.keyval().to_unicode() {
+                    //let stream = st.borrow_mut();
+                    println!("{}", c);
+                    if let Err(e) = stream.as_ref().write(&[c as u8]) {
+                        println!("Key send error: {e}");
+                    }
+                    //stream.flush().unwrap();
+                };
+                
+                
             },
             None => {},
         }
@@ -85,6 +109,8 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
         .unwrap();
 
     video_window.connect_realize(move |video_window| {
+        return;
+
         let video_overlay = &video_overlay;
         let gdk_window = video_window.window().unwrap();
 
@@ -96,7 +122,7 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
         let display_type_name = gdk_window.display().type_().name();
         println!("display type name: {display_type_name}");
         
-        #[cfg(all(target_os = "windows"))]
+        #[cfg(target_os = "windows")]
         {
             // Check if we're using X11 or ...
             if display_type_name == "GdkWin32Display" {
@@ -116,7 +142,7 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
                 process::exit(-1);
             }
         } 
-        #[cfg(all(target_os = "linux", feature = "tutorial5-x11"))]
+        #[cfg(target_os = "linux")]
         {
             // Check if we're using X11 or ...
             if display_type_name == "GdkX11Display" {
@@ -136,7 +162,7 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
                 process::exit(-1);
             }
         }
-        #[cfg(all(target_os = "macos", feature = "tutorial5-quartz"))]
+        #[cfg(target_os = "macos")]
         {
             if display_type_name == "GdkQuartzDisplay" {
                 extern "C" {
@@ -196,25 +222,27 @@ fn port_is_listening(port: u16) -> bool {
     }
 }
 pub fn main() {
-    use std::thread;
-    use std::time::Duration;
-    use std::sync::mpsc::channel;
     
+    let user = "san";
+    let host = "166.87.201.134";
+    let port: u16 = 7001;
+    let port2: u16 = 7002;
+
     // make ssh connection
-    let (tx,rx) = channel();
+    let (tx,rx) = std::sync::mpsc::channel();
 
     // Spawn ssh tunnel thread
-    thread::spawn(move|| {
-        if port_is_listening(7001) {
+    std::thread::spawn(move|| {
+        if port_is_listening(port) {
             println!("Tunnel exists, reusing...");            
             tx.send(()).expect("Could not send signal on channel.");
         } else {
             println!("Connecting...");
             let _handle = Command::new("ssh")
-                .raw_arg("-N -L 7001:localhost:7001 -L 7002:localhost:7002 san@192.168.100.202")
+                .raw_arg(format!("-N -L {port}:127.0.0.1:{port} -L {port2}:127.0.0.1:{port2} {user}@{host}"))
                 .spawn().unwrap();
-            while !port_is_listening(7001) {
-                thread::sleep(Duration::from_millis(500));
+            while !port_is_listening(port) {
+                std::thread::sleep(std::time::Duration::from_millis(200));
             }
             tx.send(()).expect("Could not send signal on channel.");
             // loop {
