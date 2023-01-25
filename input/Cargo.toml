@@ -10,6 +10,6 @@ tokio = { version = "1.24.2", features = ["full"] }
 crossterm = { version = "0.23", features = ["event-stream"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-# enigo = { path = "../../enigo" }
+enigo = { path = "../../enigo" }
 # enigo = { git = "https://github.com/sganis/enigo" }
 
