@@ -31,21 +31,13 @@ impl Drop for AppWindow {
         }
     }
 }
-fn create_ui(playbin: &gst::Element) -> AppWindow {
-
-
-    let stream = TcpStream::connect("127.0.0.1:7002")
-        .expect("Cannot connect to input port");
+fn create_ui(playbin: &gst::Element, stream: &mut TcpStream) -> AppWindow {
     
-        // wrap it to mutate it in event
-    let stream = Arc::new(stream);
-    //let stream : Arc<Mutex<String>> = Arc::new(Mutex::new(&stream));
-
     let main_window = gtk::Window::new(gtk::WindowType::Toplevel);
-    main_window.connect_delete_event(|_, _| {
-        gtk::main_quit();
-        Inhibit(false)
-    });
+    
+    // wrap it to mutate it in event
+    let stream_clone = stream.try_clone().unwrap();
+    let stream = Arc::new(stream_clone);
 
     // clone the handle to s and move it into the closure
     //let st = Arc::clone(&stream);
@@ -84,7 +76,12 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
         let result = glib::value::Value::from_type(glib::types::Type::BOOL);
         Some(result)
     });
-
+    
+    main_window.connect_delete_event(|_, _| {
+        gtk::main_quit();
+        Inhibit(false)
+    });
+    
     let pipeline = playbin.clone();
 
     // // Update the UI (seekbar) every second
@@ -253,8 +250,14 @@ pub fn main() {
     });
     
     // wait for signal
-    rx.recv().expect("Could not receive from channel.");
+    rx.recv()
+        .expect("Could not receive from channel.");
     println!("Tunnel Ok.");
+    
+    // event connection
+    let mut event_stream = TcpStream::connect("127.0.0.1:7002")
+        .expect("Cannot connect to input port");
+    println!("Event connection Ok.");
     
     // Initialize GTK
     if let Err(err) = gtk::init() {
@@ -336,7 +339,7 @@ pub fn main() {
     });
 
     // attach video to window
-    let window = create_ui(&sink);
+    let window = create_ui(&sink, &mut event_stream);
 
     // // attache test video
     // let uri = "https://www.freedesktop.org/software/gstreamer-sdk/\
