@@ -53,15 +53,11 @@ fn create_ui(playbin: &gst::Element, stream: &mut TcpStream) -> AppWindow {
 
                 if name == "Return" {
                     stream.as_ref().write(b"Return").unwrap();
-                    let mut data = [0; 1]; // using 6 byte buffer
+                    let mut data = [0; 2]; // using 2 byte buffer
                     match stream.as_ref().read(&mut data) {
                         Ok(_) => {
                             let c = String::from_utf8_lossy(&data[..]);
-                            if c == "OK" {
-                                println!("ok");
-                            } else {
-                                println!("Unexpected reply: {}", c);
-                            }
+                            println!("Response: {}", c);                            
                         },
                         Err(e) => {
                             println!("Failed to receive data: {}", e);
@@ -79,7 +75,9 @@ fn create_ui(playbin: &gst::Element, stream: &mut TcpStream) -> AppWindow {
                     match event.keyval().to_unicode() {
                         Some(k) => {
                             stream.as_ref().write(&[k as u8]).unwrap();
-                            stream.as_ref().flush().unwrap();        
+                            stream.as_ref().flush().unwrap();
+                            println!("key sent: {k}");
+                                    
                         },
                         None => {
                             println!("key not supported: {name}");
@@ -252,7 +250,8 @@ pub fn main() {
     
     let user = "san";
     // let host = "166.87.201.134";
-    let host = "192.168.100.202";
+    let host = "ecclap.chaintrust.com";
+    // let host = "192.168.100.202";
     let port: u16 = 7001;
     let port2: u16 = 7002;
 
