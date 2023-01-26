@@ -14,6 +14,7 @@ gst-video = { git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", pac
 
 [target.'cfg(unix)'.dependencies]
 enigo = { git = "https://github.com/sganis/enigo" }
+gst-plugin-ximageredux = "0.1.6"
 
 
 

@@ -1,7 +1,8 @@
 #!/bin/sh
 
 DISPLAY=:101
-APP=xterm
+APP=gnome-terminal
+export DISPLAY=$DISPLAY
 
 Xvfb +extension GLX +extension Composite \
     -screen 0 8192x4096x24+32 \
@@ -14,18 +15,17 @@ while ! $(ps aux |grep Xvfb |grep $DISPLAY >/dev/null); do
     sleep 1
 done
 
-export DISPLAY=$DISPLAY
 $APP &
 PID=$(echo $!)
 echo "PID=$PID"
 
 # ID=$(xwininfo -root -tree |grep $APP |head -1 |awk '{print $1}')
-ID=$(xdotool search --pid $PID)
+ID=$(xdotool search --pid $PID |head -1)
 while [ -z "$ID" ]; do
     echo waiting for app
     sleep 1
     # ID=$(xwininfo -root -tree |grep $APP |head -1 |awk '{print $1}')
-    ID=$(xdotool search --pid $PID)
+    ID=$(xdotool search --pid $PID |head -1)
 done
 echo $ID
 
