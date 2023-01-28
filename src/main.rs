@@ -211,24 +211,6 @@ fn create_ui(playbin: &gst::Element, stream: &mut TcpStream) -> AppWindow {
         }
     });
 
-    //let streams_list = gtk::TextView::new();
-    //streams_list.set_editable(false);
-    // let pipeline_weak = playbin.downgrade();
-    // //let streams_list_weak = glib::SendWeakRef::from(streams_list.downgrade());
-
-    // let bus = playbin.bus().unwrap();
-
-    // #[allow(clippy::single_match)]
-    // bus.connect_message(Some("application"), move |_, msg| match msg.view() {
-    //     gst::MessageView::Application(application) => {
-    //         let pipeline = match pipeline_weak.upgrade() {
-    //             Some(pipeline) => pipeline,
-    //             None => return,
-    //         };
-    //     }
-    //     _ => unreachable!(),
-    // });
-
     let vbox = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     vbox.pack_start(&video_window, true, true, 0);
     main_window.add(&vbox);
