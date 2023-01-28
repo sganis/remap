@@ -4,6 +4,7 @@ use std::net::TcpListener;
 use std::process::{Command, Stdio};
 use enigo::{Enigo, Key, KeyboardControllable};
 use clap::Parser;
+use remap::common;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]

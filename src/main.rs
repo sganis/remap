@@ -1,4 +1,4 @@
-mod common;
+// pub mod common;
 use std::{ops, os::raw::c_void, process};
 use std::io::{Read, Write};
 use std::process::Command;
