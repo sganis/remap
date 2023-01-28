@@ -2,9 +2,9 @@ use std::error::Error;
 use std::io::{Read,Write};
 use std::net::TcpListener;
 use std::process::{Command, Stdio};
-use enigo::{Enigo, Key, KeyboardControllable};
 use clap::Parser;
-use remap::common;
+use serde::Deserialize;
+use remap::{Input, MouseEvent};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -26,52 +26,6 @@ struct Cli {
     verbose: u8,
 }
 
-struct Keyboard {
-    enigo: Option<Enigo>,
-}
-
-#[allow(dead_code)]
-impl Keyboard {
-    pub fn new() -> Self {
-        Self { 
-            enigo: Some(Enigo::new()),
-        }
-    }
-    pub fn focus(&mut self) {
-        self.enigo.as_mut().unwrap().window_focus();
-    }
-    pub fn set_window(&mut self, window: i32) {
-        self.enigo.as_mut().unwrap().set_window(window);
-    }
-    pub fn get_window_pid(&mut self) -> i32 {
-        self.enigo.as_mut().unwrap().window_pid()
-    }
-    pub fn search_window_by_pid(&mut self, pid: i32) -> i32 {
-        self.enigo.as_mut().unwrap().search_window_by_pid(pid)
-    }
-    pub fn key(&mut self, key: &str) {
-        println!(" key to match: {:?}", key);
-        let k = match key {
-            "Return" => Key::Return,
-            "BackSpace" => Key::Backspace,
-            "Delete" => Key::Delete,
-            "Page_Up" => Key::PageUp,
-            "Page_Down" => Key::PageDown,
-            "Up" => Key::UpArrow,
-            "Down" => Key::DownArrow,
-            "Left" => Key::LeftArrow,
-            "Right" => Key::RightArrow,
-            "End" => Key::End,
-            "Home" => Key::Home,
-            "Tab" => Key::Tab,
-            "Escape" => Key::Escape,
-            c => Key::Layout(c.chars().next().unwrap()),
-        };
-        println!(" key detected: {:?}", k);
-        self.enigo.as_mut().unwrap().key_click(k);
-    }
-}
-
 fn is_display_server_running(display: u32) -> bool {
     let cmd = format!("ps aux |grep Xvfb |grep \":{display}\" >/dev/null");
     let r = Command::new("sh").arg("-c").arg(cmd).output()
@@ -85,6 +39,8 @@ fn find_window_id(pid: u32, display: u32) -> i32 {
     let r = Command::new("xdotool")
         .env("DISPLAY",format!(":{display}"))
         .arg("search")
+        .arg("--maxdepth")
+        .arg("1")        
         .arg("--pid")
         .arg(pid.to_string())
         .output()
@@ -94,7 +50,7 @@ fn find_window_id(pid: u32, display: u32) -> i32 {
     // println!("stdout: {stdout}");
     // println!("stderr: {stderr}");
     let lines:Vec<String> = vec!(stdout.lines().collect());
-    match lines[0].parse::<i32>() {
+    match lines[lines.len()-1].parse::<i32>() {
         Ok(xid) => xid,
         Err(_) => 0,
     }
@@ -171,10 +127,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     let mut video_proc = Command::new("gst-launch-1.0")
         .args([
-            "ximagesrc",&xidstr,"use-damage=0",
+            "ximagesrc",&xidstr,"use-damage=0","show-pointer=0",
             "!","queue",
             "!","videoconvert",
-            "!","video/x-raw,framerate=24/1",
+            "!","video/x-raw,framerate=30/1",
             "!","jpegenc",
             "!","multipartmux",
             "!","tcpserversink", "host=127.0.0.1", &format!("port={port1}")
@@ -207,40 +163,48 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut error = 0;
 
     loop {
-        let (mut socket, source_addr) = listener.accept()?;
+        let (mut stream, source_addr) = listener.accept()?;
         println!("Connected to client {:?}", source_addr);
     
-        let mut keyboard = Keyboard::new();
+        let mut input = Input::new();
         if !desktop {
-            keyboard.set_window(xid);
-            keyboard.focus();
-            let pid = keyboard.get_window_pid();
+            input.set_window(xid);
+            input.focus();
+            let pid = input.get_window_pid();
             println!("window pid: {}", pid);
         }
 
         loop {
-            let mut buf = vec![0; 12];            
-            let n = socket.read(&mut buf).expect("failed to read data from socket");
+            let mut buf = vec![0; 32];
+            let n = stream.read(&mut buf).expect("failed to read data from stream");
+            println!("click recieved: {:?}", buf);
+
             if n == 0 {
                 println!("Client disconnected.");
                 break;
             }
             
-            let c = String::from_utf8_lossy(&buf);
-            print!(" key recieved: {:?}", c);
-            let c = c.trim_matches(char::from(0));            
-            std::io::stdout().flush().unwrap();
-            if c.is_empty() {
-                println!("Client send empty key");
-                break;
-            }
+            let event: MouseEvent = bincode::deserialize(&buf[..]).unwrap();
+            println!("event: {:?}", event);
+
+            input.mouse_click(event);
+
+
+            // let c = String::from_utf8_lossy(&buf);
+            // print!(" key recieved: {:?}", c);
+            // let c = c.trim_matches(char::from(0));            
+            // std::io::stdout().flush().unwrap();
+            // if c.is_empty() {
+            //     println!("Client send empty key");
+            //     break;
+            // }
             
             // send key to window
-            keyboard.key(&c);
+            // input.key(&c);
             
-            if c == "Return" {
-                socket.write(b"OK").expect("failed to write data to socket");
-            }
+            // if c == "Return" {
+            //     stream.write(b"OK").expect("failed to write data to socket");
+            // }
         }
     }
 
