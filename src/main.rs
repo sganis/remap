@@ -42,7 +42,11 @@ impl Drop for AppWindow {
 fn create_ui(playbin: &gst::Element) -> AppWindow {
 
     let main_window = gtk::Window::new(gtk::WindowType::Toplevel);
-    main_window.set_events(gdk::EventMask::SCROLL_MASK);
+    let video_window = gtk::DrawingArea::new();
+
+    video_window.set_events(
+        gdk::EventMask::BUTTON_PRESS_MASK |
+        gdk::EventMask::SCROLL_MASK);
 
     main_window.connect_key_press_event(move |_, e| {
         let name = e.keyval().name().unwrap().as_str().to_string();
@@ -90,14 +94,14 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
         Inhibit(true)
     });
 
-    main_window.connect_button_press_event(|_, e| {
+    video_window.connect_button_press_event(|_, e| {
         //println!("{:?}", e);    
         println!("{:?}, state: {:?}", e.position(), e.state());
         let mut stream = &TCP.lock().unwrap()[0];
         let event = MouseEvent {
-            typ: "click",
-            x: e.position().0,
-            y: e.position().1,
+            typ: 'C', // click
+            x: e.position().0 as i32,
+            y: e.position().1 as i32,
             modifiers: 1,
         };
         let data: Vec<u8> = bincode::serialize(&event).unwrap();
@@ -119,7 +123,7 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
         Inhibit(true)
     });
 
-    main_window.connect_scroll_event(move |_, e| {
+    video_window.connect_scroll_event(move |_, e| {
         println!("{:?}", e);    
         println!("{:?}, state: {:?}, dir: {:?}", e.position(), e.state(), e.direction());
         Inhibit(true)
@@ -146,8 +150,7 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
         Continue(true)
     });
 
-    let video_window = gtk::DrawingArea::new();
-
+    
     let video_overlay = playbin
         .clone()
         .dynamic_cast::<gst_video::VideoOverlay>()
