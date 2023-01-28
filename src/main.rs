@@ -249,33 +249,31 @@ fn port_is_listening(port: u16) -> bool {
 pub fn main() {
     
     let user = "san";
-    // let host = "166.87.201.134";
-    let host = "ecclap.chaintrust.com";
-    // let host = "192.168.100.202";
-    let port: u16 = 7001;
-    let port2: u16 = 7002;
+    //let host = "ecclap.chaintrust.com";
+    let host = "192.168.100.202";
+    let port1: u16 = 10100;
+    let port2 = port1 + 100;
 
     // make ssh connection
     let (tx,rx) = std::sync::mpsc::channel();
 
     // Spawn ssh tunnel thread
     std::thread::spawn(move|| {
-        if port_is_listening(port) {
+        if port_is_listening(port1) {
             println!("Tunnel exists, reusing...");            
             tx.send(()).expect("Could not send signal on channel.");
         } else {
             println!("Connecting...");
             let _handle = Command::new("ssh")
-                .raw_arg(format!("-oStrictHostkeyChecking=no -N -L {port}:127.0.0.1:{port} -L {port2}:127.0.0.1:{port2} {user}@{host}"))
+                .args(["-oStrictHostkeyChecking=no","-N","-L", 
+                    &format!("{port1}:127.0.0.1:{port1}"),"-L",
+                    &format!("{port2}:127.0.0.1:{port2}"),
+                    &format!("{user}@{host}")])
                 .spawn().unwrap();
-            while !port_is_listening(port) {
+            while !port_is_listening(port1) {
                 std::thread::sleep(std::time::Duration::from_millis(200));
             }
             tx.send(()).expect("Could not send signal on channel.");
-            // loop {
-            //     println!("SSH working...");
-            //     thread::sleep(Duration::from_millis(5000));
-            // }
         }
     });
     
@@ -285,7 +283,7 @@ pub fn main() {
     println!("Tunnel Ok.");
     
     // event connection
-    let mut event_stream = TcpStream::connect("127.0.0.1:7002")
+    let mut event_stream = TcpStream::connect(&format!("127.0.0.1:{port2}"))
         .expect("Cannot connect to input port");
     println!("Event connection Ok.");
     
@@ -304,7 +302,7 @@ pub fn main() {
     let source = gst::ElementFactory::make("tcpclientsrc")
         .name("source")
         .property_from_str("host", "127.0.0.1")
-        .property("port", 7001)
+        .property_from_str("port", &format!("{port1}"))
         .build()
         .expect("Could not create source element.");
     let demuxer = gst::ElementFactory::make("multipartdemux")

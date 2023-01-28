@@ -1,0 +1,78 @@
+name: CI
+on: [push, workflow_dispatch]
+env:
+  TEST_SSH_HOST: localhost
+  TEST_SSH_USER: support
+  TEST_SSH_PASS: support
+
+jobs:
+  Build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+        include:
+          - os: windows-latest
+            in-windows: 1
+          - os: ubuntu-latest
+            in-linux: 1
+            run-test: 1
+          - os: macos-latest
+            in-macos: 1
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 18
+      - name: Rust setup
+        uses: dtolnay/rust-toolchain@stable
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+      - name: Setup linux
+        if: ${{ matrix.in-linux }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openssh-server
+          sudo service ssh --full-restart
+          sudo adduser support --gecos "First,Last,RoomNumber,WorkPhone,HomePhone" --disabled-password
+          echo support:support | sudo chpasswd
+
+      - name: Setup mac
+        if: ${{ matrix.in-macos }}
+        run: |
+          sudo systemsetup -setremotelogin on 
+          sudo systemsetup -getremotelogin
+          ls -l /Users
+          id 
+          sudo dscl . create /Users/support
+          sudo dscl . create /Users/support UserShell /bin/bash
+          sudo dscl . create /Users/support RealName Support 
+          sudo dscl . create /Users/support UniqueID 502
+          sudo dscl . create /Users/support PrimaryGroupID 20
+          sudo dscl . passwd /Users/support support
+          sudo dscl . create /Users/support NFSHomeDirectory /Users/support
+          sudo mkdir /Users/support
+          sudo chown support /Users/support
+          echo user support created
+          ls -l /Users
+          id support
+          netstat -an|grep LISTEN|grep 22
+
+      - name: Setup ssh
+        if: ${{ matrix.run-test }}
+        run: |
+          python3 -m pip install --disable-pip-version-check paramiko
+          python3 setupssh.py support@localhost support
+
+      - name: Build
+        if: ${{ matrix.in-windows }}
+        run: |
+          cargo build --bin remap
+        if: ${{ matrix.in-linux }}
+        run: |
+          cargo build --bin server
+        if: ${{ matrix.in-mac }}
+        run: |
+          cargo build --bin server
