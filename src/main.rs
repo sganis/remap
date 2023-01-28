@@ -1,16 +1,22 @@
-mod command;
+mod common;
 use std::{ops, os::raw::c_void, process};
 use std::io::{Read, Write};
 use std::process::Command;
-#[cfg(target_os = "windows")]
-use std::os::windows::process::CommandExt;
 use std::net::{TcpListener, TcpStream};
 use gdk::prelude::*;
+use glib::clone;
 use gst_video::prelude::*;
 use gtk::prelude::*;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
+use lazy_static::lazy_static;
+use crate::common::{MouseEvent};
+
+
+lazy_static! {
+    static ref TCP: Mutex<Vec<TcpStream>> = Mutex::new(Vec::new());
+}
 
 struct AppWindow {
     main_window: gtk::Window,
@@ -32,77 +38,91 @@ impl Drop for AppWindow {
         }
     }
 }
-fn create_ui(playbin: &gst::Element, stream: &mut TcpStream) -> AppWindow {
-    
+
+fn create_ui(playbin: &gst::Element) -> AppWindow {
+
     let main_window = gtk::Window::new(gtk::WindowType::Toplevel);
-    
-    // wrap it to mutate it in event
-    let stream_clone = stream.try_clone().unwrap();
-    let stream = Arc::new(stream_clone);
+    main_window.set_events(gdk::EventMask::SCROLL_MASK);
 
-    main_window.connect("key_press_event", false, move |values| {
-        let raw_event = &values[1].get::<gdk::Event>().unwrap();
-        match raw_event.downcast_ref::<gdk::EventKey>() {
-            Some(event) => {            
-                let name = event.keyval().name().unwrap().as_str().to_string();
-                println!("Key: {:?}, {:?}, unicode: {:?}, name: {:?}", 
-                    event.keyval(), 
-                    event.state(), 
-                    event.keyval().to_unicode(), 
-                    name);
+    main_window.connect_key_press_event(move |_, e| {
+        let name = e.keyval().name().unwrap().as_str().to_string();
+        let modifiers = e.state();
+        println!("Key: {:?}, {:?}, unicode: {:?}, name: {:?}, modifiers: {}", 
+            e.keyval(), 
+            e.state(), 
+            e.keyval().to_unicode(), 
+            name, modifiers);
 
-                if name == "Return" {
-                    stream.as_ref().write(b"Return").unwrap();
-                    let mut data = [0; 2]; // using 2 byte buffer
-                    match stream.as_ref().read(&mut data) {
-                        Ok(_) => {
-                            let c = String::from_utf8_lossy(&data[..]);
-                            println!("Response: {}", c);                            
-                        },
-                        Err(e) => {
-                            println!("Failed to receive data: {}", e);
-                        }
-                    }
-                } else if name == "BackSpace" || name == "Delete" ||
-                        name == "Page_Down" || name == "Page_Up" ||
-                        name == "Up" || name == "Down" ||
-                        name == "Left" || name == "Right" ||
-                        name == "Home" || name == "End" ||
-                        name == "Tab" || name == "Escape" {
-                    stream.as_ref().write(name.as_bytes()).unwrap();
-                    stream.as_ref().flush().unwrap();
-                } else {
-                    match event.keyval().to_unicode() {
-                        Some(k) => {
-                            stream.as_ref().write(&[k as u8]).unwrap();
-                            stream.as_ref().flush().unwrap();
-                            println!("key sent: {k}");
-                                    
-                        },
-                        None => {
-                            println!("key not supported: {name}");
-                        }
-                    }                   
-                }                
-            },
-            None => {},
-        }
-        let result = glib::value::Value::from_type(glib::types::Type::BOOL);
-        Some(result)
+        let mut stream = &TCP.lock().unwrap()[0];
+        if name == "Return" {
+            stream.write(b"Return").unwrap();
+            let mut data = [0; 2]; // using 2 byte buffer
+            match stream.read(&mut data) {
+                Ok(_) => {
+                    let c = String::from_utf8_lossy(&data[..]);
+                    println!("Response: {}", c);                            
+                },
+                Err(e) => {
+                    println!("Failed to receive data: {}", e);
+                }
+            }
+        } else if name == "BackSpace" || name == "Delete" ||
+                name == "Page_Down" || name == "Page_Up" ||
+                name == "Up" || name == "Down" ||
+                name == "Left" || name == "Right" ||
+                name == "Home" || name == "End" ||
+                name == "Tab" || name == "Escape" {
+            stream.write(name.as_bytes()).unwrap();
+            stream.flush().unwrap();
+        } else {
+            match e.keyval().to_unicode() {
+                Some(k) => {
+                    stream.write(&[k as u8]).unwrap();
+                    stream.flush().unwrap();
+                    println!("key sent: {k}");
+                            
+                },
+                None => {
+                    println!("key not supported: {name}");
+                }
+            }                   
+        }                
+        Inhibit(true)
     });
 
-    main_window.connect("button_press_event", false, |e| {
-        let event = &e[1].get::<gdk::Event>().unwrap();
-        println!("{:?}", event);    
-        let result = glib::value::Value::from_type(glib::types::Type::BOOL);
-        Some(result)
+    main_window.connect_button_press_event(|_, e| {
+        //println!("{:?}", e);    
+        println!("{:?}, state: {:?}", e.position(), e.state());
+        let mut stream = &TCP.lock().unwrap()[0];
+        let event = MouseEvent {
+            typ: "click",
+            x: e.position().0,
+            y: e.position().1,
+            modifiers: 1,
+        };
+        let data: Vec<u8> = bincode::serialize(&event).unwrap();
+        stream.write(&data).expect("Could not send mouse event");
+
+
+
+        //stream.write(b"click").unwrap();
+        // let mut data = [0; 2]; 
+        // match stream.read(&mut data) {
+        //     Ok(_) => {
+        //         let c = String::from_utf8_lossy(&data[..]);
+        //         println!("Response: {}", c);                            
+        //     },
+        //     Err(e) => {
+        //         println!("Failed to receive data: {}", e);
+        //     }
+        // }
+        Inhibit(true)
     });
 
-    main_window.connect("scroll_event", false, |e| {
-        let event = &e[1].get::<gdk::Event>().unwrap();
-        println!("{:?}", event);    
-        let result = glib::value::Value::from_type(glib::types::Type::BOOL);
-        Some(result)
+    main_window.connect_scroll_event(move |_, e| {
+        println!("{:?}", e);    
+        println!("{:?}, state: {:?}, dir: {:?}", e.position(), e.state(), e.direction());
+        Inhibit(true)
     });
     
     main_window.connect_delete_event(|_, _| {
@@ -265,10 +285,13 @@ pub fn main() {
     println!("Tunnel Ok.");
     
     // event connection
-    let mut event_stream = TcpStream::connect(&format!("127.0.0.1:{port2}"))
+    let event_stream = TcpStream::connect(&format!("127.0.0.1:{port2}"))
         .expect("Cannot connect to input port");
     println!("Event connection Ok.");
-    
+    {
+        let mut guard = TCP.lock().unwrap();
+        guard.push(event_stream);
+    }
     // Initialize GTK
     if let Err(err) = gtk::init() {
         eprintln!("Failed to initialize GTK: {}", err);
@@ -349,7 +372,7 @@ pub fn main() {
     });
 
     // attach video to window
-    let window = create_ui(&sink, &mut event_stream);
+    let window = create_ui(&sink);
 
     // // attache test video
     // let uri = "https://www.freedesktop.org/software/gstreamer-sdk/\
@@ -416,6 +439,8 @@ pub fn main() {
 
     //sink.set_state(gst::State::Playing).expect("Unable to set the pipeline to the `Playing` state");
     pipeline.set_state(gst::State::Playing).expect("Unable to set the pipeline to the `Playing` state");
+
+    //gdk::set_show_events(true);
 
     gtk::main();
 
