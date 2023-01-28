@@ -1,4 +1,4 @@
-// pub mod common;
+mod common;
 use std::{ops, os::raw::c_void, process};
 use std::io::{Read, Write};
 use std::process::Command;
@@ -11,7 +11,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 use lazy_static::lazy_static;
-use crate::common::{MouseEvent};
+use common::{MouseEvent};
 
 
 lazy_static! {
