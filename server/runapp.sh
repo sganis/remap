@@ -1,7 +1,7 @@
 #!/bin/sh
 
 DISPLAY=:101
-APP=gnome-terminal
+APP=xterm
 export DISPLAY=$DISPLAY
 
 Xvfb +extension GLX +extension Composite \
@@ -15,17 +15,18 @@ while ! $(ps aux |grep Xvfb |grep $DISPLAY >/dev/null); do
     sleep 1
 done
 
+
 $APP &
 PID=$(echo $!)
 echo "PID=$PID"
 
 # ID=$(xwininfo -root -tree |grep $APP |head -1 |awk '{print $1}')
-ID=$(xdotool search --pid $PID |head -1)
+ID=$(xdotool search --pid $PID)
 while [ -z "$ID" ]; do
     echo waiting for app
     sleep 1
     # ID=$(xwininfo -root -tree |grep $APP |head -1 |awk '{print $1}')
-    ID=$(xdotool search --pid $PID |head -1)
+    ID=$(xdotool search --pid $PID)
 done
 echo $ID
 
@@ -35,7 +36,7 @@ ID="xid=$ID"
 
 gst-launch-1.0 ximagesrc $ID use-damage=0 ! queue ! videoconvert \
     ! video/x-raw,framerate=24/1 ! jpegenc ! multipartmux \
-    ! tcpserversink host=127.0.0.1 port=7001
+    ! tcpserversink host=127.0.0.1 port=10100
 
 # gst-launch-1.0 ximagesrc $ID use-damage=0 ! queue ! videoconvert \
 #     ! video/x-raw,framerate=30/1 ! jpegenc ! multipartmux \
