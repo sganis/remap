@@ -1,20 +1,21 @@
 use serde::{Deserialize, Serialize};
-//use bitflags::bitflags;
+use bitflags::bitflags;
 
 #[cfg(unix)]
 use enigo::{Enigo, MouseButton as EnigoMouseButton, 
     MouseControllable, Key, KeyboardControllable};
 
 
-// bitflags! {
-//     #[derive(Serialize, Deserialize)]
-//     pub struct Modifier: u32 {
-//         const NONE = 0b00000000;
-//         const CONTROL = 0b00000001;
-//         const SHIFT = 0b00000010;
-//         const ALT = 0b00000100;
-//     }
-// }
+bitflags! {
+    #[derive(Serialize, Deserialize)]
+    pub struct Modifier: u32 {
+        const SHIFT = 1;
+        const LOCK = 2;
+        const CONTROL = 4;
+        const MOD1 = 8;
+        const MOD2 = 16;
+    }
+}
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum EventAction {
     KeyPress {
