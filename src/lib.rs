@@ -74,7 +74,7 @@ impl Input {
     pub fn search_window_by_pid(&mut self, pid: i32) -> i32 {
         self.enigo.as_mut().unwrap().search_window_by_pid(pid)
     }
-    pub fn mouse_click(&mut self, x: i32, y:i32, button: MouseButton, modifiers: i32) {
+    pub fn mouse_click(&mut self, x: i32, y:i32, button: MouseButton, modifiers: u32) {
         let button = match button {
             MouseButton::Left => EnigoMouseButton::Left,
             MouseButton::Right => EnigoMouseButton::Right,
@@ -84,7 +84,7 @@ impl Input {
         self.enigo.as_mut().unwrap().mouse_move_to(x, y);
         self.enigo.as_mut().unwrap().mouse_click(button);
     }
-    pub fn key_press(&mut self, key: &str, modifiers: i32) {
+    pub fn key_press(&mut self, key: &str, modifiers: u32) {
         println!(" key to match: {:?}", key);
         let k = match key {
             "Return" => Key::Return,
