@@ -7,7 +7,7 @@ use gst_video::prelude::*;
 use gtk::prelude::*;
 use std::sync::{Mutex};
 use lazy_static::lazy_static;
-use remap::{Event, EventAction, MouseButton};
+use remap::{Event, EventAction};
 
 
 lazy_static! {
@@ -104,15 +104,15 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
     });
 
     video_window.connect_button_press_event(|_, e| {
-        //println!("{:?}", e);    
-        println!("{:?}, state: {:?}", e.position(), e.state());
+        println!("{:?}", e);    
+        println!("{:?}, state: {:?}, button: {}", e.position(), e.state(), e.button());
         let modifiers = e.state().bits();
         let mut stream = &TCP.lock().unwrap()[0];
         let mut event = Event {
             action: EventAction::Click {
                 x: e.position().0 as i32,
                 y: e.position().1 as i32,
-                button: MouseButton::Left,
+                button: e.button() as u8,
             },
             modifiers,
         };
