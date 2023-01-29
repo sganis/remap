@@ -23,7 +23,7 @@ pub enum EventAction {
     Click { 
         x: i32, 
         y: i32,
-        button: u8,
+        button: u32,
     },
     Scroll {
         value: i32, // negative up, positive down

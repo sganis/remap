@@ -112,7 +112,7 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
             action: EventAction::Click {
                 x: e.position().0 as i32,
                 y: e.position().1 as i32,
-                button: e.button() as u8,
+                button: e.button(),
             },
             modifiers,
         };
