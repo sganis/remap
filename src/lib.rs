@@ -5,12 +5,7 @@ use serde::{Deserialize, Serialize};
 use enigo::{Enigo, MouseButton as EnigoMouseButton, 
     MouseControllable, Key, KeyboardControllable};
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
-pub enum MouseButton {
-    Left,
-    Right,
-    Middle,
-}
+
 // bitflags! {
 //     #[derive(Serialize, Deserialize)]
 //     pub struct Modifier: u32 {
@@ -28,7 +23,7 @@ pub enum EventAction {
     Click { 
         x: i32, 
         y: i32,
-        button: MouseButton,
+        button: u8,
     },
     Scroll {
         value: i32, // negative up, positive down
