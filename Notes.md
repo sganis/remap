@@ -1,5 +1,8 @@
 # Build gtk in windows
 https://github.com/wingtk/gvsbuild
+gvsbuild build gtk3 glib-networking gstreamer gst-plugins-*
+install pkg-config-lite
+SET PKG_CONFIG_PATH=C:\gtk-build\gtk\x64\release\lib\pkgconfig
 
 # Gtk4 rust book
 https://gtk-rs.org/gtk4-rs/stable/latest/book/installation_windows.html

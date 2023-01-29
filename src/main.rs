@@ -254,8 +254,8 @@ fn port_is_listening(port: u16) -> bool {
 pub fn main() {
     
     let user = "san";
-    //let host = "ecclap.chaintrust.com";
-    let host = "192.168.100.202";
+    let host = "ecclap.chaintrust.com";
+    //let host = "192.168.100.202";
     let port1: u16 = 10100;
     let port2 = port1 + 100;
 
