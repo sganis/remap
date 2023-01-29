@@ -1,4 +1,3 @@
-mod common;
 use std::{ops, os::raw::c_void, process};
 use std::io::{Read, Write};
 use std::process::Command;
@@ -6,11 +5,9 @@ use std::net::{TcpListener, TcpStream};
 use gdk::prelude::*;
 use gst_video::prelude::*;
 use gtk::prelude::*;
-use std::rc::Rc;
-use std::cell::RefCell;
-use std::sync::{Arc, Mutex};
+use std::sync::{Mutex};
 use lazy_static::lazy_static;
-use common::{MouseEvent};
+use remap::{Event};
 
 
 lazy_static! {
@@ -50,15 +47,18 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
     main_window.connect_key_press_event(move |_, e| {
         let name = e.keyval().name().unwrap().as_str().to_string();
         let modifiers = e.state();
-        println!("Key: {:?}, {:?}, unicode: {:?}, name: {:?}, modifiers: {}", 
+        println!("Key: {:?}, code: {}, state: {:?}, unicode: {:?}, name: {:?}, modifiers: {}", 
             e.keyval(), 
+            *e.keyval(),
             e.state(), 
             e.keyval().to_unicode(), 
             name, modifiers);
-
+        
+        
         let mut stream = &TCP.lock().unwrap()[0];
-        if name == "Return" {
-            stream.write(b"Return").unwrap();
+        if name == "Return" {            
+            let mut event = Event::KeyPress { key: name, modifier: 1 };
+            stream.write(&event.as_bytes()).unwrap();
             let mut data = [0; 2]; // using 2 byte buffer
             match stream.read(&mut data) {
                 Ok(_) => {
@@ -75,13 +75,15 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
                 name == "Left" || name == "Right" ||
                 name == "Home" || name == "End" ||
                 name == "Tab" || name == "Escape" {
-            stream.write(name.as_bytes()).unwrap();
-            stream.flush().unwrap();
+            let mut event = Event::KeyPress { key: name, modifier: 1 };
+            stream.write(&event.as_bytes()).unwrap();
+            //stream.flush().unwrap();
         } else {
             match e.keyval().to_unicode() {
                 Some(k) => {
-                    stream.write(&[k as u8]).unwrap();
-                    stream.flush().unwrap();
+                    let mut event = Event::KeyPress { key: k.to_string(), modifier: 1 };
+                    stream.write(&event.as_bytes()).unwrap();
+                    //stream.flush().unwrap();
                     println!("key sent: {k}");
                             
                 },
@@ -97,14 +99,13 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
         //println!("{:?}", e);    
         println!("{:?}, state: {:?}", e.position(), e.state());
         let mut stream = &TCP.lock().unwrap()[0];
-        let event = MouseEvent {
-            typ: 'C', // click
+        let mut event = Event::Click {
             x: e.position().0 as i32,
             y: e.position().1 as i32,
-            modifiers: 1,
+            modifier: 1,
         };
-        let data: Vec<u8> = bincode::serialize(&event).unwrap();
-        stream.write(&data).expect("Could not send mouse event");
+        
+        stream.write(&event.as_bytes()).expect("Could not send mouse event");
 
 
 
@@ -169,7 +170,7 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
         let display_type_name = gdk_window.display().type_().name();
         println!("display type name: {display_type_name}");
         
-        #[cfg(target_os = "windows")]
+        #[cfg(windows)]
         {
             // Check if we're using X11 or ...
             if display_type_name == "GdkWin32Display" {
@@ -189,7 +190,7 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
                 process::exit(-1);
             }
         } 
-        #[cfg(target_os = "linux")]
+        #[cfg(linux)]
         {
             // Check if we're using X11 or ...
             if display_type_name == "GdkX11Display" {
@@ -209,7 +210,7 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
                 process::exit(-1);
             }
         }
-        #[cfg(target_os = "macos")]
+        #[cfg(macos)]
         {
             if display_type_name == "GdkQuartzDisplay" {
                 extern "C" {
@@ -253,8 +254,8 @@ fn port_is_listening(port: u16) -> bool {
 pub fn main() {
     
     let user = "san";
-    let host = "ecclap.chaintrust.com";
-    //let host = "192.168.100.202";
+    //let host = "ecclap.chaintrust.com";
+    let host = "192.168.100.202";
     let port1: u16 = 10100;
     let port2 = port1 + 100;
 
