@@ -4,7 +4,7 @@ use std::net::TcpListener;
 use std::process::{Command, Stdio};
 use clap::Parser;
 use serde::Deserialize;
-use remap::{Event, EventAction, MouseButton, Input};
+use remap::{Event, EventAction, Input};
 use gst::prelude::*;
 
 #[derive(Parser)]
@@ -247,7 +247,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 },
                 Event { action: EventAction::Click {x, y, button} , modifiers: m} => {
                     input.mouse_click(x, y, button, m);
-                    if button == MouseButton::Left {
+                    if button == 1 {
                         stream.write(b"OK").expect("failed to write data to socket");
                     }
                 },

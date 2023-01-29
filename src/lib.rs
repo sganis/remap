@@ -69,11 +69,11 @@ impl Input {
     pub fn search_window_by_pid(&mut self, pid: i32) -> i32 {
         self.enigo.as_mut().unwrap().search_window_by_pid(pid)
     }
-    pub fn mouse_click(&mut self, x: i32, y:i32, button: MouseButton, modifiers: u32) {
+    pub fn mouse_click(&mut self, x: i32, y:i32, button: u32, modifiers: u32) {
         let button = match button {
-            MouseButton::Left => EnigoMouseButton::Left,
-            MouseButton::Right => EnigoMouseButton::Right,
-            MouseButton::Middle => EnigoMouseButton::Middle,
+            1 => EnigoMouseButton::Left,
+            3 => EnigoMouseButton::Right,
+            2 => EnigoMouseButton::Middle,
             _ => todo!()
         };
         self.enigo.as_mut().unwrap().mouse_move_to(x, y);

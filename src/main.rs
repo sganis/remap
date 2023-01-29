@@ -104,29 +104,32 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
     });
 
     video_window.connect_button_press_event(|_, e| {
-        println!("{:?}", e);    
+        //println!("{:?}", e);    
         println!("{:?}, state: {:?}, button: {}", e.position(), e.state(), e.button());
+        let button = e.button();
         let modifiers = e.state().bits();
         let mut stream = &TCP.lock().unwrap()[0];
         let mut event = Event {
             action: EventAction::Click {
                 x: e.position().0 as i32,
                 y: e.position().1 as i32,
-                button: e.button(),
+                button,
             },
             modifiers,
         };
         
         stream.write(&event.as_bytes()).expect("Could not send mouse event");
 
-        let mut data = [0; 2]; 
-        match stream.read(&mut data) {
-            Ok(_) => {
-                let c = String::from_utf8_lossy(&data[..]);
-                println!("Response: {}", c);                            
-            },
-            Err(e) => {
-                println!("Failed to receive data: {}", e);
+        if button == 1 {
+            let mut data = [0; 2]; 
+            match stream.read(&mut data) {
+                Ok(_) => {
+                    let c = String::from_utf8_lossy(&data[..]);
+                    println!("Response: {}", c);                            
+                },
+                Err(e) => {
+                    println!("Failed to receive data: {}", e);
+                }
             }
         }
         Inhibit(true)
