@@ -4,7 +4,7 @@ use std::net::TcpListener;
 use std::process::{Command, Stdio};
 use clap::Parser;
 use serde::Deserialize;
-use remap::{Event, EventAction, Input};
+use remap::{Event, EventAction, MouseButton, Input};
 use gst::prelude::*;
 
 #[derive(Parser)]
@@ -240,34 +240,28 @@ fn main() -> Result<(), Box<dyn Error>> {
             println!("event: {:?}", event);
             match event {
                 Event { action : EventAction::KeyPress {key}, modifiers: m} => {
-                    input.key_press(&key, m)
+                    input.key_press(&key, m);
+                    if key == "Return" {
+                        stream.write(b"OK").expect("failed to write data to socket");
+                    }
                 },
                 Event { action: EventAction::Click {x, y, button} , modifiers: m} => {
                     input.mouse_click(x, y, button, m);
+                    if button == MouseButton::Left {
+                        stream.write(b"OK").expect("failed to write data to socket");
+                    }
                 },
                 Event { action: EventAction::Scroll {value} , modifiers: m} => {
-                    todo!();
-                },              
+                    stream.write(b"NA").expect("failed to write data to socket");
+                    // todo!();
+                },  
+                _ => {
+                    println!("Client sent nothing");
+                    break
+                }            
             }
-
-            // let c = String::from_utf8_lossy(&buf);
-            // print!(" key recieved: {:?}", c);
-            // let c = c.trim_matches(char::from(0));            
-            // std::io::stdout().flush().unwrap();
-            // if c.is_empty() {
-            //     println!("Client send empty key");
-            //     break;
-            // }
-            
-            // send key to window
-            // input.key(&c);
-            
-            // if c == "Return" {
-            //     stream.write(b"OK").expect("failed to write data to socket");
-            // }
         }
     }
-
     
     Ok(())
 }

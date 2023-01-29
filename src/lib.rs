@@ -3,17 +3,13 @@ use serde::{Deserialize, Serialize};
 use enigo::{Enigo, MouseButton as EnigoMouseButton, 
     MouseControllable, Key, KeyboardControllable};
 
-// mod linux;
-// #[cfg(linux)]
-// pub use crate::linux::Input;
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
 pub enum MouseButton {
     Left,
     Right,
     Middle,
 }
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum EventAction {
     KeyPress {
         key: String, 
@@ -27,7 +23,7 @@ pub enum EventAction {
         value: i32, // negative up, positive down
     },
 }
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Event {
     pub action : EventAction,
     pub modifiers: i32,
