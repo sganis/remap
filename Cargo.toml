@@ -19,7 +19,7 @@ gtk = { git = "https://github.com/gtk-rs/gtk3-rs"}
 gdk = { git = "https://github.com/gtk-rs/gtk3-rs", package="gdk" }
 gst-video = { git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", package="gstreamer-video" }
 
-[target.'cfg(linux)'.dependencies]
+[target.'cfg(unix)'.dependencies]
 enigo = { git = "https://github.com/sganis/enigo" }
 
 

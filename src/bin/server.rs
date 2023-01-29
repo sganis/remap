@@ -4,7 +4,7 @@ use std::net::TcpListener;
 use std::process::{Command, Stdio};
 use clap::Parser;
 use serde::Deserialize;
-use remap::{Input, MouseEvent};
+use remap::{Event, EventAction, Input};
 use gst::prelude::*;
 
 #[derive(Parser)]
@@ -127,13 +127,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         xidstr = format!("xid={xid}");
     }
 
-
-    // // Initialize GTK
-    // if let Err(err) = gtk::init() {
-    //     eprintln!("Failed to initialize GTK: {}", err);
-    //     return;
-    // }
-
     // Initialize GStreamer
     if let Err(err) = gst::init() {
         eprintln!("Failed to initialize Gst: {}", err);
@@ -186,6 +179,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Build the pipeline
     pipeline.add_many(&[&source, &jpegenc, &multipartmux, &sink])
+        .expect("Could not add elements to pipeline");
+    source.link(&jpegenc)
+        .expect("Could not link elements");
+    jpegenc.link(&multipartmux)
+        .expect("Could not link elements");
+    multipartmux.link(&sink)
         .expect("Could not link elements");
     pipeline.set_state(gst::State::Playing)
         .expect("Unable to set the pipeline to the Playing state");
@@ -237,11 +236,19 @@ fn main() -> Result<(), Box<dyn Error>> {
                 break;
             }
             
-            let event: MouseEvent = bincode::deserialize(&buf[..]).unwrap();
+            let event = Event::from_bytes(&buf[..]);
             println!("event: {:?}", event);
-
-            input.mouse_click(event);
-
+            match event {
+                Event { action : EventAction::KeyPress {key}, modifiers: m} => {
+                    input.key_press(&key, m)
+                },
+                Event { action: EventAction::Click {x, y, button} , modifiers: m} => {
+                    input.mouse_click(x, y, button, m);
+                },
+                Event { action: EventAction::Scroll {value} , modifiers: m} => {
+                    todo!();
+                },              
+            }
 
             // let c = String::from_utf8_lossy(&buf);
             // print!(" key recieved: {:?}", c);
