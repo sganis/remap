@@ -860,6 +860,7 @@ name = "remap"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "bitflags",
  "clap",
  "ctrlc",
  "enigo",
