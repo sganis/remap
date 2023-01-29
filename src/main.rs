@@ -4,7 +4,6 @@ use std::io::{Read, Write};
 use std::process::Command;
 use std::net::{TcpListener, TcpStream};
 use gdk::prelude::*;
-// use glib::clone;
 use gst_video::prelude::*;
 use gtk::prelude::*;
 use std::rc::Rc;

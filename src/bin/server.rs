@@ -5,6 +5,7 @@ use std::process::{Command, Stdio};
 use clap::Parser;
 use serde::Deserialize;
 use remap::{Input, MouseEvent};
+use gst::prelude::*;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -125,26 +126,78 @@ fn main() -> Result<(), Box<dyn Error>> {
     if !desktop {
         xidstr = format!("xid={xid}");
     }
-    let mut video_proc = Command::new("gst-launch-1.0")
-        .args([
-            "ximagesrc",&xidstr,"use-damage=0","show-pointer=0",
-            "!","queue",
-            "!","videoconvert",
-            "!","video/x-raw,framerate=30/1",
-            "!","jpegenc",
-            "!","multipartmux",
-            "!","tcpserversink", "host=127.0.0.1", &format!("port={port1}")
-        ])
-        //.stdout(Stdio::null())
-        //.stderr(Stdio::null())
-        .spawn()
-        .expect("video stream failed to start");
-    println!("video pid: {}", video_proc.id());
+
+
+    // // Initialize GTK
+    // if let Err(err) = gtk::init() {
+    //     eprintln!("Failed to initialize GTK: {}", err);
+    //     return;
+    // }
+
+    // Initialize GStreamer
+    if let Err(err) = gst::init() {
+        eprintln!("Failed to initialize Gst: {}", err);
+        std::process::exit(1);
+    }
+
+    // let mut video_proc = Command::new("gst-launch-1.0")
+    //     .args([
+    //         "ximagesrc",&xidstr,"use-damage=0","show-pointer=0",
+    //         "!","queue",
+    //         "!","videoconvert",
+    //         "!","video/x-raw,framerate=30/1",
+    //         "!","jpegenc",
+    //         "!","multipartmux",
+    //         "!","tcpserversink", "host=127.0.0.1", &format!("port={port1}")
+    //     ])
+    //     //.stdout(Stdio::null())
+    //     //.stderr(Stdio::null())
+    //     .spawn()
+    //     .expect("video stream failed to start");
+    // println!("video pid: {}", video_proc.id());
+
+    let source = gst::ElementFactory::make("ximagesrc")
+        .name("source")
+        .property_from_str("use-damage", "0")
+        .property_from_str("xid", &format!("{xid}"))
+        .build()
+        .expect("Could not create source element.");
+    // let videoconvert = gst::ElementFactory::make("videoconvert")
+    //     .name("videoconvert")
+    //     .build()
+    //     .expect("Could not create videoconvert element");    
+    let jpegenc = gst::ElementFactory::make("jpegenc")
+        .name("jpegenc")
+        .build()
+        .expect("Could not create jpegenc element");    
+    let multipartmux = gst::ElementFactory::make("multipartmux")
+        .name("multipartmux")
+        .build()
+        .expect("Could not create multipartmux element");    
+    let sink = gst::ElementFactory::make("tcpserversink")
+        .name("sink")
+        .property_from_str("host","127.0.0.1")
+        .property_from_str("port", &format!("{port1}"))
+        .build()
+        .expect("Could not create sink element");    
+    
+    // Create the empty pipeline
+    let pipeline = gst::Pipeline::builder().name("pipeline").build();
+
+    // Build the pipeline
+    pipeline.add_many(&[&source, &jpegenc, &multipartmux, &sink])
+        .expect("Could not link elements");
+    pipeline.set_state(gst::State::Playing)
+        .expect("Unable to set the pipeline to the Playing state");
+
 
     // handle contol+c
     ctrlc::set_handler(move || {
-        video_proc.kill().expect("Failed to stop streaming");
-        println!("Streaming stopped.");
+        //video_proc.kill().expect("Failed to stop streaming");
+        //println!("Streaming stopped.");
+        pipeline.set_state(gst::State::Null).
+            expect("Unable to set the pipeline to the `Null` state");
+    
         if let Some(p) = &mut app_proc {
             p.kill().expect("Failed to stop app");
             println!("App stopped.");        
