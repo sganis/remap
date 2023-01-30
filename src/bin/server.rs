@@ -155,36 +155,22 @@ fn main() -> Result<(), Box<dyn Error>> {
         .property_from_str("xid", &format!("{xid}"))
         .build()
         .expect("Could not create source element.");
-    // let videoconvert = gst::ElementFactory::make("videoconvert")
-    //     .name("videoconvert")
-    //     .build()
-    //     .expect("Could not create videoconvert element");    
     let jpegenc = gst::ElementFactory::make("jpegenc")
         .name("jpegenc")
         .build()
-        .expect("Could not create jpegenc element");    
-    let multipartmux = gst::ElementFactory::make("multipartmux")
-        .name("multipartmux")
-        .build()
-        .expect("Could not create multipartmux element");    
+        .expect("Could not create jpegenc element");     
     let sink = gst::ElementFactory::make("tcpserversink")
         .name("sink")
         .property_from_str("host","127.0.0.1")
         .property_from_str("port", &format!("{port1}"))
         .build()
         .expect("Could not create sink element");    
-    
-    // Create the empty pipeline
     let pipeline = gst::Pipeline::builder().name("pipeline").build();
-
-    // Build the pipeline
-    pipeline.add_many(&[&source, &jpegenc, &multipartmux, &sink])
+    pipeline.add_many(&[&source, &jpegenc, &sink])
         .expect("Could not add elements to pipeline");
     source.link(&jpegenc)
         .expect("Could not link elements");
-    jpegenc.link(&multipartmux)
-        .expect("Could not link elements");
-    multipartmux.link(&sink)
+    jpegenc.link(&sink)
         .expect("Could not link elements");
     pipeline.set_state(gst::State::Playing)
         .expect("Unable to set the pipeline to the Playing state");
