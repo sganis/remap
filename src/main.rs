@@ -1,14 +1,14 @@
 use std::{ops, os::raw::c_void, process};
 use std::io::{Read, Write};
 use std::process::Command;
-use std::net::{TcpListener, TcpStream};
+use std::net::{TcpStream};
 use gdk::{prelude::*, ModifierType};
 use gst_video::prelude::*;
 use gtk::prelude::*;
 use std::sync::{Mutex};
 use lazy_static::lazy_static;
 use remap::{Event, EventAction, Modifier};
-
+mod util;
 
 lazy_static! {
     static ref TCP: Mutex<Vec<TcpStream>> = Mutex::new(Vec::new());
@@ -45,7 +45,8 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
     video_window.set_events(
         gdk::EventMask::BUTTON_PRESS_MASK |
         gdk::EventMask::SCROLL_MASK |
-        gdk::EventMask::PROPERTY_CHANGE_MASK
+        gdk::EventMask::PROPERTY_CHANGE_MASK |
+        gdk::EventMask::POINTER_MOTION_MASK
     );
 
     main_window.connect_key_press_event(move |_, e| {
@@ -156,35 +157,46 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
     
     video_window.connect_resize(|_, w, h| {
         println!("size: {w},{h}");
-        ()
+        
     });
-    
-    main_window.connect_property_notify_event(|_, e| {
-        println!("notification: {:?}", e);
+
+    video_window.connect_motion_notify_event(|_, e| {
+        println!("{:?}, state: {:?}", e.position(), e.state());
+        let modifiers = e.state().bits();
+        let mut stream = &TCP.lock().unwrap()[0];
+        let mut event = Event {
+            action: EventAction::MouseMove {
+                x: e.position().0 as i32,
+                y: e.position().1 as i32,
+            },
+            modifiers,
+        };        
+        stream.write(&event.as_bytes()).expect("Could not send mouse move event");
+        stream.flush().unwrap();
         Inhibit(true)
     });
 
-    let pipeline = playbin.clone();
+    // main_window.connect_property_notify_event(|_, e| {
+    //     println!("notification: {:?}", e);
+    //     Inhibit(true)
+    // });
 
-    // // Update the UI (seekbar) every second
-    let timeout_id = glib::timeout_add_seconds_local(1, move || {
-        let pipeline = &pipeline;
-        if let Some(dur) = pipeline.query_duration::<gst::ClockTime>() {
-            if let Some(pos) = pipeline.query_position::<gst::ClockTime>() {
-                //lslider.block_signal(&slider_update_signal_id);
-                //lslider.set_value(pos.seconds() as f64);
-                //lslider.unblock_signal(&slider_update_signal_id);
-            }
-        }
-
-        Continue(true)
-    });
+    //let pipeline = playbin.clone();
+    // // // Update the UI (seekbar) every second
+    // let timeout_id = glib::timeout_add_seconds_local(1, move || {
+    //     let pipeline = &pipeline;
+    //     if let Some(dur) = pipeline.query_duration::<gst::ClockTime>() {
+    //         if let Some(pos) = pipeline.query_position::<gst::ClockTime>() {
+    //             //lslider.block_signal(&slider_update_signal_id);
+    //             //lslider.set_value(pos.seconds() as f64);
+    //             //lslider.unblock_signal(&slider_update_signal_id);
+    //         }
+    //     }
+    //     Continue(true)
+    // });
 
     
-    let video_overlay = playbin
-        .clone()
-        .dynamic_cast::<gst_video::VideoOverlay>()
-        .unwrap();
+    let video_overlay = playbin.clone().dynamic_cast::<gst_video::VideoOverlay>().unwrap();
 
     video_window.connect_realize(move |video| {
         //return;
@@ -272,15 +284,10 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
 
     AppWindow {
         main_window,
-        timeout_id: Some(timeout_id),
+        timeout_id: None // Some(timeout_id),
     }
 }
-fn port_is_listening(port: u16) -> bool {
-    match TcpListener::bind(("127.0.0.1", port)) {
-        Ok(_) => false,
-        Err(_) => true,
-    }
-}
+
 pub fn main() {
     
     let user = "san";
@@ -298,7 +305,7 @@ pub fn main() {
 
     // Spawn ssh tunnel thread
     std::thread::spawn(move|| {
-        if port_is_listening(port1) {
+        if util::port_is_listening(port1) {
             println!("Tunnel exists, reusing...");            
             tx.send(()).expect("Could not send signal on channel.");
         } else {
@@ -309,7 +316,7 @@ pub fn main() {
                     &format!("{port2}:127.0.0.1:{port2}"),
                     &format!("{user}@{host}")])
                 .spawn().unwrap();
-            while !port_is_listening(port1) {
+            while !util::port_is_listening(port1) {
                 std::thread::sleep(std::time::Duration::from_millis(200));
             }
             tx.send(()).expect("Could not send signal on channel.");

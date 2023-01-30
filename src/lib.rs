@@ -26,6 +26,10 @@ pub enum EventAction {
         y: i32,
         button: u32,
     },
+    MouseMove { 
+        x: i32, 
+        y: i32,
+    },
     Scroll {
         value: i32, // negative up, positive down
     },
