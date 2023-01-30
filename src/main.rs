@@ -38,11 +38,15 @@ impl Drop for AppWindow {
 fn create_ui(playbin: &gst::Element) -> AppWindow {
 
     let main_window = gtk::Window::new(gtk::WindowType::Toplevel);
-    let video_window = gtk::DrawingArea::new();
-
+    main_window.set_events(
+        gdk::EventMask::PROPERTY_CHANGE_MASK
+    );
+    let video_window = gtk::GLArea::new();
     video_window.set_events(
         gdk::EventMask::BUTTON_PRESS_MASK |
-        gdk::EventMask::SCROLL_MASK);
+        gdk::EventMask::SCROLL_MASK |
+        gdk::EventMask::PROPERTY_CHANGE_MASK
+    );
 
     main_window.connect_key_press_event(move |_, e| {
         let name = e.keyval().name().unwrap().as_str().to_string();
@@ -150,6 +154,16 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
         Inhibit(false)
     });
     
+    video_window.connect_resize(|_, w, h| {
+        println!("size: {w},{h}");
+        ()
+    });
+    
+    main_window.connect_property_notify_event(|_, e| {
+        println!("notification: {:?}", e);
+        Inhibit(true)
+    });
+
     let pipeline = playbin.clone();
 
     // // Update the UI (seekbar) every second
@@ -172,11 +186,11 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
         .dynamic_cast::<gst_video::VideoOverlay>()
         .unwrap();
 
-    video_window.connect_realize(move |video_window| {
-        return;
+    video_window.connect_realize(move |video| {
+        //return;
 
         let video_overlay = &video_overlay;
-        let gdk_window = video_window.window().unwrap();
+        let gdk_window = video.window().unwrap();
 
         if !gdk_window.ensure_native() {
             println!("Can't create native window for widget");
@@ -253,7 +267,7 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
     let vbox = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     vbox.pack_start(&video_window, true, true, 0);
     main_window.add(&vbox);
-    main_window.set_default_size(1000, 800);
+    main_window.set_default_size(1600, 1000);
     main_window.show_all();
 
     AppWindow {
@@ -274,7 +288,11 @@ pub fn main() {
     let host = "192.168.100.202";
     let port1: u16 = 10100;
     let port2 = port1 + 100;
-
+    
+    // video overlay does not work with this env var
+    std::env::set_var("GTK_CSD","0");
+    std::env::set_var("GDK_WIN32_LAYERED","0");
+    
     // make ssh connection
     let (tx,rx) = std::sync::mpsc::channel();
 
@@ -328,70 +346,25 @@ pub fn main() {
         .property_from_str("host", "127.0.0.1")
         .property_from_str("port", &format!("{port1}"))
         .build()
-        .expect("Could not create source element.");
-    let demuxer = gst::ElementFactory::make("multipartdemux")
-        .name("demuxer")
-        .build()
-        .expect("Could not create demuxer element");    
+        .expect("Could not create source element."); 
     let decoder = gst::ElementFactory::make("jpegdec")
         .name("decoder")
         .build()
         .expect("Could not create decoder element");    
     let sink = gst::ElementFactory::make("glimagesink")
-    //let sink = gst::ElementFactory::make("d3dvideosink")
         .name("sink")
         .build()
         .expect("Could not create sink element");    
+    let window = create_ui(&sink);
 
-
-    
     // Create the empty pipeline
     let pipeline = gst::Pipeline::builder().name("pipeline").build();
-
-    // Build the pipeline
-    pipeline.add_many(&[&source, &demuxer, &decoder, &sink]).unwrap();
-
-    // link elements, skip demuxer->decoder for later
-    source.link(&demuxer).expect("Elements source-demuxer could not be linked.");
+    pipeline.add_many(&[&source, &decoder, &sink]).unwrap();
+    source.link(&decoder).expect("Elements source-demuxer could not be linked.");
     decoder.link(&sink).expect("Elements decoder-sink could not be linked.");
 
-    // Connect the pad-added signal
-    demuxer.connect_pad_added(move |src, src_pad| {
-        println!("Received new pad {} from {}", src_pad.name(), src.name());
-
-        let sink_pad = decoder.static_pad("sink")
-            .expect("Failed to get static sink pad from decoder");
-        if sink_pad.is_linked() {
-            println!("We are already linked. Ignoring.");
-            return;
-        }
-
-        let new_pad_caps = src_pad.current_caps()
-            .expect("Failed to get caps of new pad.");
-        let new_pad_struct = new_pad_caps
-            .structure(0)
-            .expect("Failed to get first structure of caps.");
-        let new_pad_type = new_pad_struct.name();
-
-        let is_image = new_pad_type.starts_with("image/jpeg");
-        if !is_image {
-            println!(
-                "It has type {} which is not jpeg image. Ignoring.",
-                new_pad_type
-            );
-            return;
-        }
-        // attempt to link
-        let res = src_pad.link(&sink_pad);
-        if res.is_err() {
-            println!("Type is {} but link failed.", new_pad_type);
-        } else {
-            println!("Link succeeded (type {}).", new_pad_type);
-        }
-    });
-
     // attach video to window
-    let window = create_ui(&sink);
+    //let window = create_ui(&sink);
 
     // // attache test video
     // let uri = "https://www.freedesktop.org/software/gstreamer-sdk/\
@@ -402,6 +375,8 @@ pub fn main() {
     // let window = create_ui(&playbin);
     // playbin.set_state(gst::State::Playing).unwrap();
     
+
+
     let bus = pipeline.bus().unwrap();
     bus.add_signal_watch();
 
@@ -451,7 +426,7 @@ pub fn main() {
                 // println!("ELEMENT: {:?}", m);
             },
             m => {
-                println!("BUS: {:?}", m);
+                //println!("BUS: {:?}", m);
             },
         }
     });
