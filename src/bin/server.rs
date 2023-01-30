@@ -237,6 +237,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                         stream.write(b"OK").expect("failed to write data to socket");
                     }
                 },
+                Event { action: EventAction::MouseMove {x, y} , modifiers: m} => {
+                    input.mouse_move(x, y, m);
+                    stream.write(b"OK").expect("failed to write data to socket");                    
+                },
                 Event { action: EventAction::Scroll {value} , modifiers: m} => {
                     stream.write(b"NA").expect("failed to write data to socket");
                     // todo!();

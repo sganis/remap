@@ -84,6 +84,9 @@ impl Input {
         self.enigo.as_mut().unwrap().mouse_move_to(x, y);
         self.enigo.as_mut().unwrap().mouse_click(button);
     }
+    pub fn mouse_move(&mut self, x: i32, y:i32, modifiers: u32) {
+        self.enigo.as_mut().unwrap().mouse_move_to(x, y);
+    }
     pub fn key_press(&mut self, key: &str, modifiers: u32) {
         println!(" key to match: {:?}", key);
         let k = match key {
