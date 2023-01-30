@@ -6,6 +6,7 @@ use clap::Parser;
 use serde::Deserialize;
 use remap::{Event, EventAction, Input};
 use gst::prelude::*;
+use remap::util;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -25,36 +26,6 @@ struct Cli {
     /// Verbosity level
     #[arg(short, long, action = clap::ArgAction::Count)]
     verbose: u8,
-}
-
-fn is_display_server_running(display: u32) -> bool {
-    let cmd = format!("ps aux |grep Xvfb |grep \":{display}\" >/dev/null");
-    let r = Command::new("sh").arg("-c").arg(cmd).output()
-        .expect("Could not run ps command");
-    r.status.code().unwrap() == 0
-}
-
-fn find_window_id(pid: u32, display: u32) -> i32 {
-    //let cmd = format!("xdotool search --pid {pid}");
-    //println!("{}",cmd);
-    let r = Command::new("xdotool")
-        .env("DISPLAY",format!(":{display}"))
-        .arg("search")
-        .arg("--maxdepth")
-        .arg("1")        
-        .arg("--pid")
-        .arg(pid.to_string())
-        .output()
-        .expect("Could not run find window id command");
-    let stdout = String::from_utf8_lossy(&r.stdout).trim().to_string();
-    // let stderr = String::from_utf8_lossy(&r.stderr).trim().to_string();
-    // println!("stdout: {stdout}");
-    // println!("stderr: {stderr}");
-    let lines:Vec<String> = vec!(stdout.lines().collect());
-    match lines[lines.len()-1].parse::<i32>() {
-        Ok(xid) => xid,
-        Err(_) => 0,
-    }
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -97,7 +68,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         display_proc = Some(p);
 
         // wait for it
-        while !is_display_server_running(display) {
+        while !util::is_display_server_running(display) {
             println!("Waiging display...");
             std::thread::sleep(std::time::Duration::from_millis(200));
         }    
@@ -112,11 +83,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("app pid: {pid}");
         
         // find window ID,. wait for it
-        xid = find_window_id(pid, display);   
+        xid = util::find_window_id(pid, display);   
         while xid == 0 {
             println!("Waiting window id...");
             std::thread::sleep(std::time::Duration::from_millis(200));
-            xid = find_window_id(pid, display);
+            xid = util::find_window_id(pid, display);
         } 
         println!("window xid: {} ({:#06x})", xid, xid);
     }

@@ -1,3 +1,4 @@
+pub mod util;
 use serde::{Deserialize, Serialize};
 use bitflags::bitflags;
 
