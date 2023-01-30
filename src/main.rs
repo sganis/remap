@@ -2,12 +2,12 @@ use std::{ops, os::raw::c_void, process};
 use std::io::{Read, Write};
 use std::process::Command;
 use std::net::{TcpListener, TcpStream};
-use gdk::prelude::*;
+use gdk::{prelude::*, ModifierType};
 use gst_video::prelude::*;
 use gtk::prelude::*;
 use std::sync::{Mutex};
 use lazy_static::lazy_static;
-use remap::{Event, EventAction};
+use remap::{Event, EventAction, Modifier};
 
 
 lazy_static! {
@@ -53,7 +53,11 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
             e.state(), 
             e.keyval().to_unicode(), 
             name, modifiers);
-        let modifiers = e.state().bits();        
+        let modifiers = e.state().bits();     
+        // let a = ModifierType::CONTROL_MASK;
+        // let m = e.state().contains(a);
+        // println!(" contains control: {}", m);
+
         let mut stream = &TCP.lock().unwrap()[0];
         if name == "Return" {            
             let mut event = Event {
