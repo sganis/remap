@@ -173,6 +173,8 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
         };        
         stream.write(&event.as_bytes()).expect("Could not send mouse move event");
         stream.flush().unwrap();
+        let mut data = [0; 2]; 
+        stream.read(&mut data).expect("Failed to recieved mouse move");
         Inhibit(true)
     });
 
