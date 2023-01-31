@@ -213,7 +213,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         loop {
             let mut buf = vec![0; 32];
-            let n = stream.read(&mut buf).expect("failed to read data from stream");
+            let n = stream.read(&mut buf)
+                .expect("failed to read data from stream");
             println!("click recieved: {:?}", buf);
 
             if n == 0 {
@@ -227,21 +228,31 @@ fn main() -> Result<(), Box<dyn Error>> {
                 Event { action : EventAction::KeyPress {key}, modifiers: m} => {
                     input.key_press(&key, m);
                     if key == "Return" {
-                        stream.write(b"OK").expect("failed to write data to socket");
+                        stream.write(b"OK")
+                            .expect("failed to write data to socket");
                     }
                 },
                 Event { action: EventAction::Click {x, y, button} , modifiers: m} => {
                     input.mouse_click(x, y, button, m);
                     if button == 1 {
-                        stream.write(b"OK").expect("failed to write data to socket");
+                        stream.write(b"OK")
+                            .expect("failed to write data to socket");
                     }
                 },
                 Event { action: EventAction::MouseMove {x, y} , modifiers: m} => {
                     input.mouse_move(x, y, m);
-                    stream.write(b"OK").expect("failed to write data to socket");                    
+                    stream.write(b"OK")
+                        .expect("failed to write data to socket");                    
                 },
                 Event { action: EventAction::Scroll {value} , modifiers: m} => {
-                    stream.write(b"NA").expect("failed to write data to socket");
+                    stream.write(b"NA")
+                        .expect("failed to write data to socket");
+                    // todo!();
+                },  
+                Event { action: EventAction::Resize {w,h} , modifiers: _} => {
+                    //println!("resize: ")
+                    stream.write(b"OK")
+                        .expect("failed to write data to socket");
                     // todo!();
                 },  
                 _ => {

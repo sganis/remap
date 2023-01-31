@@ -58,11 +58,6 @@ pub struct Geometry {
     pub width: i32, 
     pub height: i32
 }
-// impl Geometry {
-//     pub fn new(w: i32, h: i32) -> Geometry {
-//         Geometry(w,h)
-//     }
-// }
 
 #[cfg(unix)]
 pub struct Input {
