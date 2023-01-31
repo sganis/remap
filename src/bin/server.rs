@@ -90,6 +90,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("app pid: {pid}");
         
         // find window ID,. wait for it
+        //let window_name = app;
+        //xid = util::get_window_id(pid, window_name, display);   
         xid = util::get_window_id(pid, display);   
         while xid == 0 {
             println!("Waiting window id...");
@@ -141,16 +143,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         .name("queue").build()?;
     let videoscale = gst::ElementFactory::make("videoscale")
         .name("videoscale").build()?;
-    // let caps = gst::Caps::builder("video/x-raw")
-    //     .field("width", &gst::IntRange::<i32>::new(0, geometry.width))
-    //     .field("height", &gst::IntRange::<i32>::new(0, geometry.height))
-    //     .field("framerate", &gst::FractionRange::new(
-    //         gst::Fraction::new(0, 1), 
-    //         gst::Fraction::new(10, 1))) // 10 fps
-    //     .build();
+        
+    let (width, height) = (geometry.width, geometry.height);
+    // let width = std::cmp::min(width, 1000);
+    // let height = std::cmp::min(height, 600);
+    
+
     let caps = gst::Caps::from_str(
         &format!("video/x-raw,width={},height={},framerate=10/1",
-            geometry.width,geometry.height))?;
+            width,height))?;
     let capsfilter = gst::ElementFactory::make("capsfilter")
         .name("capsfilter")
         .property("caps", &caps)

@@ -57,7 +57,7 @@ gst-launch-1.0 ximagesrc xid=0x2c00007 ! video/x-raw,framerate=30/1 ! videoscale
 
 # linux server
 
-gst-launch-1.0 ximagesrc xid=0x2c00007 ! queue ! videoconvert ! video/x-raw,framerate=30/1 ! jpegenc ! multipartmux ! tcpserversink host=0.0.0.0 port=7001
+gst-launch-1.0 ximagesrc xid=0x2c00007 ! queue ! videoconvert ! video/x-raw,framerate=30/1 ! jpegenc ! tcpserversink host=137.0.0.1 port=7001
 
 # windows client
 
