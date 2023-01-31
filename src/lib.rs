@@ -32,8 +32,8 @@ pub enum EventAction {
         y: i32,
     },
     Resize { 
-        w: i32, 
-        h: i32,
+        width: i32, 
+        height: i32,
     },
     Scroll {
         value: i32, // negative up, positive down
@@ -78,6 +78,8 @@ impl Input {
     }
     pub fn set_server_geometry(&mut self, geometry: Geometry) {
         self.server_geometry = geometry;
+        println!("enigo: set window size");
+        self.enigo.as_mut().unwrap().set_window_size(geometry.width, geometry.height);
     }
     pub fn set_client_geometry(&mut self, geometry: Geometry) {
         self.client_geometry = geometry;

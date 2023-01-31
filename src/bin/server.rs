@@ -2,6 +2,10 @@ use std::error::Error;
 use std::io::{Read,Write};
 use std::net::TcpListener;
 use std::process::{Command, Stdio};
+use std::str::FromStr;
+use std::cell::RefCell;
+use std::rc::Rc;
+use glib::clone;
 use clap::Parser;
 use serde::Deserialize;
 use remap::{Event, EventAction, Input, Geometry};
@@ -132,65 +136,58 @@ fn main() -> Result<(), Box<dyn Error>> {
         .name("source")
         .property_from_str("use-damage", "0")
         .property_from_str("xid", &format!("{xid}"))
-        .build()
-        .expect("Could not create source element.");
+        .build()?;
+    let queue = gst::ElementFactory::make("queue")
+        .name("queue").build()?;
     let videoscale = gst::ElementFactory::make("videoscale")
-        .name("videoscale")
-        .build()
-        .expect("Could not create videoconvert element");     
-    let caps = gst::Caps::builder("video/x-raw")
-        .field("width", &gst::IntRange::<i32>::new(0, geometry.width))
-        .field("height", &gst::IntRange::<i32>::new(0, geometry.height))
-        .field("framerate", &gst::FractionRange::new(
-            gst::Fraction::new(0, 1), 
-            gst::Fraction::new(10, 1))) // 10 fps
-        .build();
+        .name("videoscale").build()?;
+    // let caps = gst::Caps::builder("video/x-raw")
+    //     .field("width", &gst::IntRange::<i32>::new(0, geometry.width))
+    //     .field("height", &gst::IntRange::<i32>::new(0, geometry.height))
+    //     .field("framerate", &gst::FractionRange::new(
+    //         gst::Fraction::new(0, 1), 
+    //         gst::Fraction::new(10, 1))) // 10 fps
+    //     .build();
+    let caps = gst::Caps::from_str(
+        &format!("video/x-raw,width={},height={},framerate=10/1",
+            geometry.width,geometry.height))?;
     let capsfilter = gst::ElementFactory::make("capsfilter")
         .name("capsfilter")
         .property("caps", &caps)
-        .build()
-	    .expect("Could not create filter element.");
+        .build()?;
     let videoconvert = gst::ElementFactory::make("videoconvert")
         .name("videoconvert")
-        .build()
-        .expect("Could not create videoconvert element");     
+        .build()?;
     let jpegenc = gst::ElementFactory::make("jpegenc")
         .name("jpegenc")
-        .build()
-        .expect("Could not create jpegenc element");     
+        .build()?;
     let sink = gst::ElementFactory::make("tcpserversink")
         .name("sink")
         .property_from_str("host","127.0.0.1")
         .property_from_str("port", &format!("{port1}"))
-        .build()
-        .expect("Could not create sink element");    
+        .build()?;
     let pipeline = gst::Pipeline::builder().name("pipeline").build();
-    pipeline.add_many(&[&source, &videoscale, &capsfilter, &videoconvert, &jpegenc, &sink])
-        .expect("Could not add elements to pipeline");
-    gst::Element::link_many(&[&source, &videoscale, &capsfilter, &videoconvert, &jpegenc, &sink])
-        .expect("Could not link elements");
-    pipeline.set_state(gst::State::Playing)
-        .expect("Unable to set the pipeline to the Playing state");
+    pipeline.add_many(
+        &[&source, &queue, &videoscale, &capsfilter, &videoconvert, &jpegenc, &sink])?;
+    gst::Element::link_many(
+        &[&source, &queue, &videoscale, &capsfilter, &videoconvert, &jpegenc, &sink])?;
+    pipeline.set_state(gst::State::Playing);
 
+    //let pipeline_rc = Rc::new(RefCell::new(pipeline));
 
     // handle contol+c
-    ctrlc::set_handler(move || {
-        //video_proc.kill().expect("Failed to stop streaming");
-        //println!("Streaming stopped.");
-        pipeline.set_state(gst::State::Null).
-            expect("Unable to set the pipeline to the `Null` state");
-    
+    ctrlc::set_handler(clone!(@weak pipeline => move || {
+        pipeline.set_state(gst::State::Null).unwrap();
         if let Some(p) = &mut app_proc {
-            p.kill().expect("Failed to stop app");
+            p.kill().unwrap();
             println!("App stopped.");        
         }
         if let Some(p) = &mut display_proc {        
-            p.kill().expect("Failed to stop display");        
+            p.kill().unwrap();        
             println!("Display :{display} stopped.");        
         }
         std::process::exit(0);
-    })
-    .expect("Error setting Ctrl-C handler");
+    }));
 
     let listener = TcpListener::bind(&input_addr)?;
     println!("Listening on: {}", input_addr);
@@ -202,20 +199,22 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("Connected to client {:?}", source_addr);
     
         let mut input = Input::new();
+        input.set_window(xid);
+        let pid = input.get_window_pid();
+        println!("window pid: {}", pid);
         input.set_server_geometry(geometry);
-
+        
+        
         if !desktop {
-            input.set_window(xid);
+            
             input.focus();
-            let pid = input.get_window_pid();
-            println!("window pid: {}", pid);
+            
         }
 
         loop {
             let mut buf = vec![0; 32];
-            let n = stream.read(&mut buf)
-                .expect("failed to read data from stream");
-            println!("click recieved: {:?}", buf);
+            let n = stream.read(&mut buf)?;
+            // println!("event recieved: {:?}", buf);
 
             if n == 0 {
                 println!("Client disconnected.");
@@ -223,37 +222,38 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
             
             let event = Event::from_bytes(&buf[..]);
-            println!("event: {:?}", event);
+            //println!("event: {:?}", event);
             match event {
                 Event { action : EventAction::KeyPress {key}, modifiers: m} => {
                     input.key_press(&key, m);
                     if key == "Return" {
-                        stream.write(b"OK")
-                            .expect("failed to write data to socket");
+                        stream.write(b"OK").unwrap();
                     }
                 },
                 Event { action: EventAction::Click {x, y, button} , modifiers: m} => {
                     input.mouse_click(x, y, button, m);
                     if button == 1 {
-                        stream.write(b"OK")
-                            .expect("failed to write data to socket");
+                        stream.write(b"OK").unwrap();
                     }
                 },
                 Event { action: EventAction::MouseMove {x, y} , modifiers: m} => {
                     input.mouse_move(x, y, m);
-                    stream.write(b"OK")
-                        .expect("failed to write data to socket");                    
+                    stream.write(b"OK")?;
                 },
                 Event { action: EventAction::Scroll {value} , modifiers: m} => {
-                    stream.write(b"NA")
-                        .expect("failed to write data to socket");
-                    // todo!();
+                    stream.write(b"NA")?;
                 },  
-                Event { action: EventAction::Resize {w,h} , modifiers: _} => {
-                    //println!("resize: ")
-                    stream.write(b"OK")
-                        .expect("failed to write data to socket");
-                    // todo!();
+                Event { action: EventAction::Resize {width,height} , modifiers: _} => {
+                    let geometry = Geometry {width,height};
+                    input.set_server_geometry(geometry);
+                    let caps = gst::Caps::from_str(
+                        &format!("video/x-raw,width={},height={},framerate=10/1",
+                            geometry.width,geometry.height))?;
+                    pipeline.set_state(gst::State::Paused)?;
+                    capsfilter.set_property("caps", &caps);
+                    pipeline.set_state(gst::State::Playing)?;  
+                    println!("geometry changed to {:?}", geometry);                  
+                    stream.write(b"OK")?;
                 },  
                 _ => {
                     println!("Client sent nothing");
