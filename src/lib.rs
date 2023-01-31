@@ -49,10 +49,22 @@ impl Event {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Default)]
+pub struct Geometry {
+    pub width: i32, 
+    pub height: i32
+}
+// impl Geometry {
+//     pub fn new(w: i32, h: i32) -> Geometry {
+//         Geometry(w,h)
+//     }
+// }
 
 #[cfg(unix)]
 pub struct Input {
     enigo: Option<Enigo>,
+    server_geometry: Geometry,
+    client_geometry: Geometry,
 }
 
 #[cfg(unix)]
@@ -61,7 +73,15 @@ impl Input {
     pub fn new() -> Self {
         Self { 
             enigo: Some(Enigo::new()),
+            server_geometry : Geometry::default(),
+            client_geometry : Geometry::default(),
         }
+    }
+    pub fn set_server_geometry(&mut self, geometry: Geometry) {
+        self.server_geometry = geometry;
+    }
+    pub fn set_client_geometry(&mut self, geometry: Geometry) {
+        self.client_geometry = geometry;
     }
     pub fn focus(&mut self) {
         self.enigo.as_mut().unwrap().window_focus();
@@ -108,6 +128,5 @@ impl Input {
         };
         println!(" key detected: {:?}", k);
         self.enigo.as_mut().unwrap().key_click(k);
-
     }
 }

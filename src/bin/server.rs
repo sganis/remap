@@ -4,7 +4,7 @@ use std::net::TcpListener;
 use std::process::{Command, Stdio};
 use clap::Parser;
 use serde::Deserialize;
-use remap::{Event, EventAction, Input};
+use remap::{Event, EventAction, Input, Geometry};
 use gst::prelude::*;
 use remap::util;
 
@@ -43,6 +43,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut display_proc = None;
     let mut app_proc = None;
     let mut xid = 0;
+    let mut geometry = Geometry::default();
 
     println!("Display: :{}", display);
     println!("App: {}", app);
@@ -57,10 +58,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     if !desktop {
         // run display_server
+        // default resolution: 1280x1024x8
         let p = Command::new("Xvfb")
-            .args(["+extension","GLX","+extension","Composite","-screen","0",
-                "8192x4096x24+32","-nolisten","tcp","-noreset",
-                "-auth","/run/user/1000/gdm/Xauthority","-dpi","96",
+            .args(["+extension","GLX","+extension","Composite",
+                "-screen","0","2048x1024x24+32",
+                //"-auth","/run/user/1000/gdm/Xauthority",
+                "-nolisten","tcp","-noreset", "-dpi","96",
                 &format!(":{display}")])
             .spawn()
             .expect("display failed to start");
@@ -83,13 +86,17 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("app pid: {pid}");
         
         // find window ID,. wait for it
-        xid = util::find_window_id(pid, display);   
+        xid = util::get_window_id(pid, display);   
         while xid == 0 {
             println!("Waiting window id...");
             std::thread::sleep(std::time::Duration::from_millis(200));
-            xid = util::find_window_id(pid, display);
+            xid = util::get_window_id(pid, display);
         } 
-        println!("window xid: {} ({:#06x})", xid, xid);
+        println!("Window xid: {} ({:#06x})", xid, xid);
+
+        geometry = util::get_window_geometry(xid, display);
+        println!("Geometry: {:?}", geometry);
+
     }
 
     // run video server
@@ -120,12 +127,33 @@ fn main() -> Result<(), Box<dyn Error>> {
     //     .expect("video stream failed to start");
     // println!("video pid: {}", video_proc.id());
 
+
     let source = gst::ElementFactory::make("ximagesrc")
         .name("source")
         .property_from_str("use-damage", "0")
         .property_from_str("xid", &format!("{xid}"))
         .build()
         .expect("Could not create source element.");
+    let videoscale = gst::ElementFactory::make("videoscale")
+        .name("videoscale")
+        .build()
+        .expect("Could not create videoconvert element");     
+    let caps = gst::Caps::builder("video/x-raw")
+        .field("width", &gst::IntRange::<i32>::new(0, geometry.width))
+        .field("height", &gst::IntRange::<i32>::new(0, geometry.height))
+        .field("framerate", &gst::FractionRange::new(
+            gst::Fraction::new(0, 1), 
+            gst::Fraction::new(10, 1))) // 10 fps
+        .build();
+    let capsfilter = gst::ElementFactory::make("capsfilter")
+        .name("capsfilter")
+        .property("caps", &caps)
+        .build()
+	    .expect("Could not create filter element.");
+    let videoconvert = gst::ElementFactory::make("videoconvert")
+        .name("videoconvert")
+        .build()
+        .expect("Could not create videoconvert element");     
     let jpegenc = gst::ElementFactory::make("jpegenc")
         .name("jpegenc")
         .build()
@@ -137,11 +165,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         .build()
         .expect("Could not create sink element");    
     let pipeline = gst::Pipeline::builder().name("pipeline").build();
-    pipeline.add_many(&[&source, &jpegenc, &sink])
+    pipeline.add_many(&[&source, &videoscale, &capsfilter, &videoconvert, &jpegenc, &sink])
         .expect("Could not add elements to pipeline");
-    source.link(&jpegenc)
-        .expect("Could not link elements");
-    jpegenc.link(&sink)
+    gst::Element::link_many(&[&source, &videoscale, &capsfilter, &videoconvert, &jpegenc, &sink])
         .expect("Could not link elements");
     pipeline.set_state(gst::State::Playing)
         .expect("Unable to set the pipeline to the Playing state");
@@ -176,6 +202,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("Connected to client {:?}", source_addr);
     
         let mut input = Input::new();
+        input.set_server_geometry(geometry);
+
         if !desktop {
             input.set_window(xid);
             input.focus();
