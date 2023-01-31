@@ -41,6 +41,7 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
     main_window.set_events(
         gdk::EventMask::PROPERTY_CHANGE_MASK
     );
+
     let video_window = gtk::GLArea::new();
     video_window.set_events(
         gdk::EventMask::BUTTON_PRESS_MASK |
@@ -156,8 +157,12 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
     });
     
     video_window.connect_resize(|_, w, h| {
-        println!("size: {w},{h}");
-        
+        let mut stream = &TCP.lock().unwrap()[0];
+        let mut event = Event {action: EventAction::Resize {w, h}, modifiers: 0};   
+        stream.write(&event.as_bytes()).expect("Could not send resize event");
+        stream.flush().unwrap();
+        let mut data = [0; 2]; 
+        stream.read(&mut data).expect("Failed to recieved mouse move");
     });
 
     video_window.connect_motion_notify_event(|_, e| {
@@ -177,32 +182,10 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
         stream.read(&mut data).expect("Failed to recieved mouse move");
         Inhibit(true)
     });
-
-    // main_window.connect_property_notify_event(|_, e| {
-    //     println!("notification: {:?}", e);
-    //     Inhibit(true)
-    // });
-
-    //let pipeline = playbin.clone();
-    // // // Update the UI (seekbar) every second
-    // let timeout_id = glib::timeout_add_seconds_local(1, move || {
-    //     let pipeline = &pipeline;
-    //     if let Some(dur) = pipeline.query_duration::<gst::ClockTime>() {
-    //         if let Some(pos) = pipeline.query_position::<gst::ClockTime>() {
-    //             //lslider.block_signal(&slider_update_signal_id);
-    //             //lslider.set_value(pos.seconds() as f64);
-    //             //lslider.unblock_signal(&slider_update_signal_id);
-    //         }
-    //     }
-    //     Continue(true)
-    // });
-
     
     let video_overlay = playbin.clone().dynamic_cast::<gst_video::VideoOverlay>().unwrap();
 
     video_window.connect_realize(move |video| {
-        //return;
-
         let video_overlay = &video_overlay;
         let gdk_window = video.window().unwrap();
 
@@ -281,7 +264,7 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
     let vbox = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     vbox.pack_start(&video_window, true, true, 0);
     main_window.add(&vbox);
-    main_window.set_default_size(1600, 1000);
+    main_window.set_default_size(1684, 874);
     main_window.show_all();
 
     AppWindow {
@@ -293,8 +276,9 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
 pub fn main() {
     
     let user = "san";
-    //let host = "ecclap.chaintrust.com";
-    let host = "192.168.100.202";
+    //let host = "ecclin.chaintrust.com";
+    let host = "ecclap.chaintrust.com";
+    //let host = "192.168.100.202";
     let port1: u16 = 10100;
     let port2 = port1 + 100;
     
@@ -399,8 +383,7 @@ pub fn main() {
             return;
         }
         let pipeline = pipeline.unwrap();
-        let sink = sink.unwrap();
-
+        
         //println!("bus message: {:?} ", msg.view());
 
         match msg.view() {
@@ -434,13 +417,12 @@ pub fn main() {
             gst::MessageView::Element(m) => {
                 // println!("ELEMENT: {:?}", m);
             },
-            m => {
+            _m => {
                 //println!("BUS: {:?}", m);
             },
         }
     });
 
-    //sink.set_state(gst::State::Playing).expect("Unable to set the pipeline to the `Playing` state");
     pipeline.set_state(gst::State::Playing).expect("Unable to set the pipeline to the `Playing` state");
 
     //gdk::set_show_events(true);
