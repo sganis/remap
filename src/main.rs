@@ -156,9 +156,12 @@ fn create_ui(sink: &gst::Element) -> AppWindow {
         Inhibit(false)
     });
     
-    video_window.connect_resize(|_, w, h| {
+    video_window.connect_resize(|_, width, height| {
         let mut stream = &TCP.lock().unwrap()[0];
-        let mut event = Event {action: EventAction::Resize {w, h}, modifiers: 0};   
+        let mut event = Event {
+            action: EventAction::Resize {width, height}, 
+            modifiers: 0
+        };   
         stream.write(&event.as_bytes()).expect("Could not send resize event");
         stream.flush().unwrap();
         let mut data = [0; 2]; 
