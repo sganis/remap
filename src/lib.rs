@@ -31,6 +31,10 @@ pub enum EventAction {
         x: i32, 
         y: i32,
     },
+    Resize { 
+        w: i32, 
+        h: i32,
+    },
     Scroll {
         value: i32, // negative up, positive down
     },

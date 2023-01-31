@@ -90,6 +90,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             xid = util::find_window_id(pid, display);
         } 
         println!("window xid: {} ({:#06x})", xid, xid);
+
+        
     }
 
     // run video server
