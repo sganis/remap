@@ -7,8 +7,8 @@ use gst_video::prelude::*;
 use gtk::prelude::*;
 use std::sync::{Mutex};
 use lazy_static::lazy_static;
-use remap::{Event, EventAction, Modifier};
-mod util;
+use remap::{Event, EventAction, Modifier, util};
+
 
 lazy_static! {
     static ref TCP: Mutex<Vec<TcpStream>> = Mutex::new(Vec::new());
@@ -35,7 +35,7 @@ impl Drop for AppWindow {
     }
 }
 
-fn create_ui(playbin: &gst::Element) -> AppWindow {
+fn create_ui(sink: &gst::Element) -> AppWindow {
 
     let main_window = gtk::Window::new(gtk::WindowType::Toplevel);
     main_window.set_events(
@@ -166,7 +166,7 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
     });
 
     video_window.connect_motion_notify_event(|_, e| {
-        println!("{:?}, state: {:?}", e.position(), e.state());
+        //println!("{:?}, state: {:?}", e.position(), e.state());
         let modifiers = e.state().bits();
         let mut stream = &TCP.lock().unwrap()[0];
         let mut event = Event {
@@ -183,7 +183,7 @@ fn create_ui(playbin: &gst::Element) -> AppWindow {
         Inhibit(true)
     });
     
-    let video_overlay = playbin.clone().dynamic_cast::<gst_video::VideoOverlay>().unwrap();
+    let video_overlay = sink.clone().dynamic_cast::<gst_video::VideoOverlay>().unwrap();
 
     video_window.connect_realize(move |video| {
         let video_overlay = &video_overlay;
@@ -277,8 +277,8 @@ pub fn main() {
     
     let user = "san";
     //let host = "ecclin.chaintrust.com";
-    let host = "ecclap.chaintrust.com";
-    //let host = "192.168.100.202";
+    // let host = "ecclap.chaintrust.com";
+    let host = "192.168.100.202";
     let port1: u16 = 10100;
     let port2 = port1 + 100;
     
