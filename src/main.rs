@@ -157,6 +157,7 @@ fn create_ui(sink: &gst::Element) -> AppWindow {
     });
     
     video_window.connect_resize(|_, width, height| {
+        return;
         let mut stream = &TCP.lock().unwrap()[0];
         let mut event = Event {
             action: EventAction::Resize {width, height}, 
@@ -169,6 +170,7 @@ fn create_ui(sink: &gst::Element) -> AppWindow {
     });
 
     video_window.connect_motion_notify_event(|_, e| {
+        return Inhibit(true);
         //println!("{:?}, state: {:?}", e.position(), e.state());
         let modifiers = e.state().bits();
         let mut stream = &TCP.lock().unwrap()[0];
@@ -280,8 +282,8 @@ pub fn main() {
     
     let user = "san";
     //let host = "ecclin.chaintrust.com";
-    // let host = "ecclap.chaintrust.com";
-    let host = "192.168.100.202";
+    let host = "ecclap.chaintrust.com";
+    //let host = "192.168.100.202";
     let port1: u16 = 10100;
     let port2 = port1 + 100;
     
@@ -325,6 +327,7 @@ pub fn main() {
         let mut guard = TCP.lock().unwrap();
         guard.push(event_stream);
     }
+
     // Initialize GTK
     if let Err(err) = gtk::init() {
         eprintln!("Failed to initialize GTK: {}", err);
