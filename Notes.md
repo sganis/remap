@@ -57,11 +57,11 @@ gst-launch-1.0 ximagesrc xid=0x2c00007 ! video/x-raw,framerate=30/1 ! videoscale
 
 # linux server
 
-gst-launch-1.0 ximagesrc xid=0x2c00007 ! queue ! videoconvert ! video/x-raw,framerate=30/1 ! jpegenc ! tcpserversink host=137.0.0.1 port=7001
+gst-launch-1.0 ximagesrc xid=0x2c00007 ! queue ! videoconvert ! video/x-raw,framerate=30/1 ! jpegenc ! tcpserversink host=127.0.0.1 port=10100
 
 # windows client
 
-gst-launch-1.0 tcpclientsrc host=192.168.100.202 port=7001 ! multipartdemux ! jpegdec ! glimagesink
+gst-launch-1.0 tcpclientsrc host=192.168.100.202 port=10100 ! multipartdemux ! jpegdec ! glimagesink
 
 ## SSH tunnel
 
