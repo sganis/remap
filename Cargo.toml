@@ -7,18 +7,20 @@ edition = "2021"
 
 [dependencies]
 glib = { git = "https://github.com/gtk-rs/gtk-rs-core" }
-gst = { git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", package="gstreamer" }
+# gst = { git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", package="gstreamer" }
 serde = { version = "1.0", features = ["derive"] }
 clap = {version = "4.1.4", features=['derive']}
 ctrlc = "3.2.4"
 lazy_static = "1.4.0"
 bincode = "1.3.3"
 bitflags = "1.3.2"
+xcb = "1.2.0"
+byteorder = "1.4.3"
 
 [target.'cfg(windows)'.dependencies]
-gtk = { git = "https://github.com/gtk-rs/gtk3-rs"}
-gdk = { git = "https://github.com/gtk-rs/gtk3-rs", package="gdk" }
-gst-video = { git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", package="gstreamer-video" }
+# gtk = { git = "https://github.com/gtk-rs/gtk3-rs"}
+# gdk = { git = "https://github.com/gtk-rs/gtk3-rs", package="gdk" }
+# gst-video = { git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", package="gstreamer-video" }
 
 [target.'cfg(unix)'.dependencies]
 enigo = { git = "https://github.com/sganis/enigo" }
