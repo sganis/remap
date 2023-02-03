@@ -282,8 +282,8 @@ pub fn main() {
     
     let user = "san";
     //let host = "ecclin.chaintrust.com";
-    let host = "ecclap.chaintrust.com";
-    //let host = "192.168.100.202";
+    //let host = "ecclap.chaintrust.com";
+    let host = "192.168.100.202";
     let port1: u16 = 10100;
     let port2 = port1 + 100;
     
