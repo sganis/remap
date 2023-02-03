@@ -5,11 +5,13 @@ use std::process::{Command, Stdio};
 use std::str::FromStr;
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::{time::Instant};
+use xcb::x::{Window, Drawable, GetImage, ImageFormat, GetGeometry};
+use xcb::{XidNew};
 use glib::clone;
 use clap::Parser;
 use serde::Deserialize;
 use remap::{Event, EventAction, Input, Geometry};
-use gst::prelude::*;
 use remap::util;
 
 #[derive(Parser)]
@@ -105,80 +107,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     }
 
-    // run video server
-    let mut xidstr = String::from("");
-    if !desktop {
-        xidstr = format!("xid={xid}");
-    }
-
-    // Initialize GStreamer
-    if let Err(err) = gst::init() {
-        eprintln!("Failed to initialize Gst: {}", err);
-        std::process::exit(1);
-    }
-
-    // let mut video_proc = Command::new("gst-launch-1.0")
-    //     .args([
-    //         "ximagesrc",&xidstr,"use-damage=0","show-pointer=0",
-    //         "!","queue",
-    //         "!","videoconvert",
-    //         "!","video/x-raw,framerate=30/1",
-    //         "!","jpegenc",
-    //         "!","multipartmux",
-    //         "!","tcpserversink", "host=127.0.0.1", &format!("port={port1}")
-    //     ])
-    //     //.stdout(Stdio::null())
-    //     //.stderr(Stdio::null())
-    //     .spawn()
-    //     .expect("video stream failed to start");
-    // println!("video pid: {}", video_proc.id());
-
-
-    let source = gst::ElementFactory::make("ximagesrc")
-        .name("source")
-        .property_from_str("use-damage", "0")
-        .property_from_str("xid", &format!("{xid}"))
-        .build()?;
-    let queue = gst::ElementFactory::make("queue")
-        .name("queue").build()?;
-    let videoscale = gst::ElementFactory::make("videoscale")
-        .name("videoscale").build()?;
-        
-    let (width, height) = (geometry.width, geometry.height);
-    // let width = std::cmp::min(width, 1000);
-    // let height = std::cmp::min(height, 600);
-    
-
-    let caps = gst::Caps::from_str(
-        &format!("video/x-raw,width={},height={},framerate=10/1",
-            width,height))?;
-    let capsfilter = gst::ElementFactory::make("capsfilter")
-        .name("capsfilter")
-        .property("caps", &caps)
-        .build()?;
-    let videoconvert = gst::ElementFactory::make("videoconvert")
-        .name("videoconvert")
-        .build()?;
-    let jpegenc = gst::ElementFactory::make("jpegenc")
-        .name("jpegenc")
-        .build()?;
-    let sink = gst::ElementFactory::make("tcpserversink")
-        .name("sink")
-        .property_from_str("host","127.0.0.1")
-        .property_from_str("port", &format!("{port1}"))
-        .build()?;
-    let pipeline = gst::Pipeline::builder().name("pipeline").build();
-    pipeline.add_many(
-        &[&source, &queue, &videoscale, &capsfilter, &videoconvert, &jpegenc, &sink])?;
-    gst::Element::link_many(
-        &[&source, &queue, &videoscale, &capsfilter, &videoconvert, &jpegenc, &sink])?;
-    pipeline.set_state(gst::State::Playing);
-
-    //let pipeline_rc = Rc::new(RefCell::new(pipeline));
-
     // handle contol+c
-    ctrlc::set_handler(clone!(@weak pipeline => move || {
-        pipeline.set_state(gst::State::Null).unwrap();
+    ctrlc::set_handler(move || {
         if let Some(p) = &mut app_proc {
             p.kill().unwrap();
             println!("App stopped.");        
@@ -188,12 +118,30 @@ fn main() -> Result<(), Box<dyn Error>> {
             println!("Display :{display} stopped.");        
         }
         std::process::exit(0);
-    }));
+    }).unwrap();
 
     let listener = TcpListener::bind(&input_addr)?;
     println!("Listening on: {}", input_addr);
 
     let mut error = 0;
+
+    let window = unsafe {Window::new(xid as u32)};
+
+    let (conn, index) = xcb::Connection::connect(None).unwrap();
+    let setup = conn.get_setup();
+
+    let drawable = if desktop {
+        let screen = setup.roots().nth(index as usize).unwrap();
+        Drawable::Window(screen.root())
+    } else {
+        Drawable::Window(window)
+    };
+
+    let reply = conn.wait_for_reply(
+        conn.send_request(&GetGeometry { drawable })
+    ).unwrap();
+    let (width, height) = (reply.width(), reply.height());
+    println!("Geometry xcb: {}x{}", width, height);
 
     loop {
         let (mut stream, source_addr) = listener.accept()?;
@@ -205,11 +153,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("window pid: {}", pid);
         input.set_server_geometry(geometry);
         
-        
-        if !desktop {
-            
-            input.focus();
-            
+        if !desktop {    
+            input.focus();    
         }
 
         loop {
@@ -225,10 +170,36 @@ fn main() -> Result<(), Box<dyn Error>> {
             let event = Event::from_bytes(&buf[..]);
             //println!("event: {:?}", event);
             match event {
+                Event { action : EventAction::FramebufferUpdateRequest {
+                    incremental, x, y, width, height,
+                }, modifiers: m } => {
+                    let reply = conn.wait_for_reply(
+                        conn.send_request(&GetImage {
+                            format: ImageFormat::ZPixmap, drawable, 
+                            x: 0, y: 0, width, height, plane_mask: u32::MAX,
+                        })
+                    ).unwrap();
+                    let mut bytes = Vec::from(reply.data());
+                    // BGRA to RGBA
+                    for i in (0..bytes.len()).step_by(4) {
+                        let b = bytes[i];
+                        let r = bytes[i + 2];      
+                        bytes[i] = r;
+                        bytes[i + 2] = b;
+                        bytes[i + 3] = 255;
+                    }
+                    //image::save_buffer("image.jpg",
+                    //    &bytes, width as u32, height as u32, image::ColorType::Rgba8).unwrap();
+                    stream.write(&bytes[..]).unwrap();
+
+                },
                 Event { action : EventAction::KeyPress {key}, modifiers: m} => {
                     input.key_press(&key, m);
                     if key == "Return" {
                         stream.write(b"OK").unwrap();
+
+
+
                     }
                 },
                 Event { action: EventAction::Click {x, y, button} , modifiers: m} => {
@@ -245,15 +216,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     stream.write(b"NA")?;
                 },  
                 Event { action: EventAction::Resize {width,height} , modifiers: _} => {
-                    let geometry = Geometry {width,height};
-                    input.set_server_geometry(geometry);
-                    let caps = gst::Caps::from_str(
-                        &format!("video/x-raw,width={},height={},framerate=10/1",
-                            geometry.width,geometry.height))?;
-                    pipeline.set_state(gst::State::Paused)?;
-                    capsfilter.set_property("caps", &caps);
-                    pipeline.set_state(gst::State::Playing)?;  
-                    println!("geometry changed to {:?}", geometry);                  
+                    let geometry = Geometry {width,height};                    
                     stream.write(b"OK")?;
                 },  
                 _ => {

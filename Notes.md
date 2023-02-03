@@ -124,3 +124,8 @@ gst-launch-1.0 v4l2src ! \
  bitrate=3000 threads=2 ! \
  h264parse config-interval=1 ! \
  rtph264pay ! udpsink host=127.0.0.1 port=5000
+
+
+# RFB
+git@github.com:HsuJv/vnc-rs.git
+git@github.com:whitequark/rust-vnc.git
