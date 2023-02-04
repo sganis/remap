@@ -7,7 +7,7 @@ use gtk::prelude::*;
 
 use std::sync::{Mutex};
 use lazy_static::lazy_static;
-use remap::{Event, EventAction, Modifier, util, C2S, Message};
+use remap::{Event, EventAction, Modifier, util, ClientEvent, Message};
 
 
 lazy_static! {
@@ -46,6 +46,7 @@ fn create_ui() -> AppWindow {
     let video_window = gtk::DrawingArea::new();
     video_window.set_events(
         gdk::EventMask::BUTTON_PRESS_MASK |
+        gdk::EventMask::BUTTON_RELEASE_MASK |
         gdk::EventMask::SCROLL_MASK |
         gdk::EventMask::PROPERTY_CHANGE_MASK |
         gdk::EventMask::POINTER_MOTION_MASK
@@ -70,35 +71,25 @@ fn create_ui() -> AppWindow {
             e.state(), 
             e.keyval().to_unicode(), 
             name, modifiers);
-        let modifiers = e.state().bits();     
+        //let modifiers = e.state().bits();     
         // let a = ModifierType::CONTROL_MASK;
         // let m = e.state().contains(a);
         // println!(" contains control: {}", m);
 
         let mut stream = &TCP.lock().unwrap()[0];
-        if name == "Return" {            
-            
-            // let width = 1684;
-            // let height = 874;
-            // let event = C2S::FramebufferUpdateRequest { 
-            //     incremental: false, x_position: 0, y_position: 0, 
-            //     width: width as u16, 
-            //     height: height as u16                 
-            // };
-            
-            let message = C2S::KeyEvent { down: true, key  };
-            message.write_to(&mut stream).unwrap(); 
+        let message = ClientEvent::KeyEvent { down: true, key  };
+        message.write_to(&mut stream).unwrap(); 
 
-            let mut data = [0; 2]; // using 2 byte buffer
-            match stream.read(&mut data) {
-                Ok(_) => {
-                    let c = String::from_utf8_lossy(&data[..]);
-                    println!("Response: {}", c);                            
-                },
-                Err(e) => {
-                    println!("Failed to receive data: {}", e);
-                }
-            }
+            // let mut data = [0; 2]; // using 2 byte buffer
+            // match stream.read(&mut data) {
+            //     Ok(_) => {
+            //         let c = String::from_utf8_lossy(&data[..]);
+            //         println!("Response: {}", c);                            
+            //     },
+            //     Err(e) => {
+            //         println!("Failed to receive data: {}", e);
+            //     }
+            // }
 
             // send update request
 
@@ -126,41 +117,41 @@ fn create_ui() -> AppWindow {
             // }
 
 
-        } else if name == "BackSpace" || name == "Delete" ||
-                name == "Page_Down" || name == "Page_Up" ||
-                name == "Up" || name == "Down" ||
-                name == "Left" || name == "Right" ||
-                name == "Home" || name == "End" ||
-                name == "Tab" || name == "Escape" {
-            let mut event = Event {
-                action: EventAction::KeyPress { key: name },
-                modifiers,
-            };
-            stream.write(&event.as_bytes()).unwrap();
-            //stream.flush().unwrap();
-        } else {
-            match e.keyval().to_unicode() {
-                Some(k) => {
-                    let mut event = Event {
-                        action: EventAction::KeyPress { key: k.to_string() },
-                        modifiers,
-                    };
-                    stream.write(&event.as_bytes()).unwrap();
-                    //stream.flush().unwrap();
-                    println!("key sent: {k}");
+        // } else if name == "BackSpace" || name == "Delete" ||
+        //         name == "Page_Down" || name == "Page_Up" ||
+        //         name == "Up" || name == "Down" ||
+        //         name == "Left" || name == "Right" ||
+        //         name == "Home" || name == "End" ||
+        //         name == "Tab" || name == "Escape" {
+        //     let mut event = Event {
+        //         action: EventAction::KeyPress { key: name },
+        //         modifiers,
+        //     };
+        //     stream.write(&event.as_bytes()).unwrap();
+        //     //stream.flush().unwrap();
+        // } else {
+        //     match e.keyval().to_unicode() {
+        //         Some(k) => {
+        //             let mut event = Event {
+        //                 action: EventAction::KeyPress { key: k.to_string() },
+        //                 modifiers,
+        //             };
+        //             stream.write(&event.as_bytes()).unwrap();
+        //             //stream.flush().unwrap();
+        //             println!("key sent: {k}");
                             
-                },
-                None => {
-                    println!("key not supported: {name}");
-                }
-            }                   
-        }                
+        //         },
+        //         None => {
+        //             println!("key not supported: {name}");
+        //         }
+        //     }                   
+        // }                
         Inhibit(true)
     });
 
     main_window.connect_key_release_event(move |_, e| {
         let key = *e.keyval();
-        let message = C2S::KeyEvent { down: false, key  };
+        let message = ClientEvent::KeyEvent { down: false, key  };
         let mut stream = &TCP.lock().unwrap()[0];
         message.write_to(&mut stream).unwrap(); 
         Inhibit(true)
@@ -170,31 +161,57 @@ fn create_ui() -> AppWindow {
         //println!("{:?}", e);    
         println!("{:?}, state: {:?}, button: {}", e.position(), e.state(), e.button());
         let button = e.button();
-        let modifiers = e.state().bits();
-        let mut stream = &TCP.lock().unwrap()[0];
-        let mut event = Event {
-            action: EventAction::Click {
-                x: e.position().0 as i32,
-                y: e.position().1 as i32,
-                button,
-            },
-            modifiers,
+        let b1: u8 = (button == 1).into();
+        let b2: u8 = (button == 2).into();
+        let b3: u8 = (button == 3).into();
+        let bits: Vec<u8> = vec![b1, b2, b3, 0, 0, 0, 0, 0];
+        let buttons: u8 = util::bits_to_number(&bits);
+        println!("bits: {:?}, number: {}", bits, buttons);
+        
+        let message = ClientEvent::PointerEvent { 
+            button_mask: buttons, 
+            x_position: e.position().0 as u16,
+            y_position: e.position().1 as u16, 
         };
         
-        stream.write(&event.as_bytes()).expect("Could not send mouse event");
+        let mut stream = &TCP.lock().unwrap()[0];
+        message.write_to(&mut stream).unwrap(); 
+        
+        // let mut event = Event {
+        //     action: EventAction::Click {
+        //         x: e.position().0 as i32,
+        //         y: e.position().1 as i32,
+        //         button,
+        //     },
+        //     modifiers,
+        // };
+        
+        // stream.write(&event.as_bytes()).expect("Could not send mouse event");
 
-        if button == 1 {
-            let mut data = [0; 2]; 
-            match stream.read(&mut data) {
-                Ok(_) => {
-                    let c = String::from_utf8_lossy(&data[..]);
-                    println!("Response: {}", c);                            
-                },
-                Err(e) => {
-                    println!("Failed to receive data: {}", e);
-                }
-            }
-        }
+        // if button == 1 {
+        //     let mut data = [0; 2]; 
+        //     match stream.read(&mut data) {
+        //         Ok(_) => {
+        //             let c = String::from_utf8_lossy(&data[..]);
+        //             println!("Response: {}", c);                            
+        //         },
+        //         Err(e) => {
+        //             println!("Failed to receive data: {}", e);
+        //         }
+        //     }
+        // }
+        Inhibit(true)
+    });
+
+    video_window.connect_button_release_event(|_, e| {
+        println!("{:?}, state: {:?}, button: {}", e.position(), e.state(), e.button());
+        let message = ClientEvent::PointerEvent { 
+            button_mask: 0, 
+            x_position: e.position().0 as u16,
+            y_position: e.position().1 as u16, 
+        };      
+        let mut stream = &TCP.lock().unwrap()[0];
+        message.write_to(&mut stream).unwrap(); 
         Inhibit(true)
     });
 
