@@ -11,7 +11,7 @@ use xcb::{XidNew};
 use glib::clone;
 use clap::Parser;
 use serde::Deserialize;
-use remap::{Event, EventAction, Input, Geometry};
+use remap::{Event, EventAction, Input, Geometry, ClientEvent, ServerEvent, Message};
 use remap::util;
 
 #[derive(Parser)]
@@ -43,9 +43,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let app = args[0];
     let args = &args[1..];       
     let desktop = app == "desktop";
-    let port1 = cli.port.unwrap_or(10100);
-    let port2 = port1 + 100;
-    let input_addr = format!("127.0.0.1:{port2}");
+    let port = cli.port.unwrap_or(10100);
+    let input_addr = format!("127.0.0.1:{port}");
     let mut display_proc = None;
     let mut app_proc = None;
     let mut xid = 0;
@@ -54,8 +53,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Display: :{}", display);
     println!("App: {}", app);
     println!("Args: {:?}", args);
-    println!("Port 1: {}", port1);
-    println!("Port 2: {}", port2);
+    println!("Port: {}", port);
     println!("Verbosity: {}", cli.verbose);
 
     if !desktop {
@@ -158,6 +156,56 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         loop {
+            let message = match ClientEvent::read_from(&mut stream) {
+                Err(error) => {
+                    println!("Client disconnected");
+                    break;
+                },
+                Ok(message) => message,
+            };
+            match message {
+                ClientEvent::KeyEvent {down, key} => {
+                    let name = gdk::keys::Key::from(key).name().unwrap();
+                    let action = if down {"pressed"} else {"released"};
+                    println!("key {}: {}, name: {}", action, key, name);
+                },
+                ClientEvent::PointerEvent { button_mask, x_position, y_position} => {
+                    let action = if button_mask > 0 {"pressed"} else {"release"};
+                    println!("button {}: {}, ({},{})", 
+                        action, button_mask, x_position, y_position);
+                },
+                ClientEvent::FramebufferUpdateRequest { incremental, x_position, y_position, width, height } => {
+                    println!("Frame update: {x_position} {y_position} {width} {height}");
+                    let ximage = conn.wait_for_reply(
+                        conn.send_request(&GetImage {
+                            format: ImageFormat::ZPixmap, drawable, 
+                            x: 0, y: 0, width, height, plane_mask: u32::MAX,
+                        })
+                    ).unwrap();
+                    let mut bytes = Vec::from(ximage.data());
+                    // BGRA to RGBA
+                    for i in (0..bytes.len()).step_by(4) {
+                        let b = bytes[i];
+                        let r = bytes[i + 2];      
+                        bytes[i] = r;
+                        bytes[i + 2] = b;
+                        bytes[i + 3] = 255;
+                    }
+                    let message = ServerEvent::FramebufferUpdate {
+                        count: 1
+                    };
+                    message.write_to(&mut stream).unwrap();
+                    //image::save_buffer("image.jpg",
+                    //    &bytes, width as u32, height as u32, image::ColorType::Rgba8).unwrap();
+                    stream.write(&bytes[..]).unwrap();
+                },
+                _ => {
+                    println!("Unknown message");
+                }
+            }
+
+            continue;
+
             let mut buf = vec![0; 32];
             let n = stream.read(&mut buf)?;
             // println!("event recieved: {:?}", buf);
@@ -173,24 +221,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 Event { action : EventAction::FramebufferUpdateRequest {
                     incremental, x, y, width, height,
                 }, modifiers: m } => {
-                    let reply = conn.wait_for_reply(
-                        conn.send_request(&GetImage {
-                            format: ImageFormat::ZPixmap, drawable, 
-                            x: 0, y: 0, width, height, plane_mask: u32::MAX,
-                        })
-                    ).unwrap();
-                    let mut bytes = Vec::from(reply.data());
-                    // BGRA to RGBA
-                    for i in (0..bytes.len()).step_by(4) {
-                        let b = bytes[i];
-                        let r = bytes[i + 2];      
-                        bytes[i] = r;
-                        bytes[i + 2] = b;
-                        bytes[i + 3] = 255;
-                    }
-                    //image::save_buffer("image.jpg",
-                    //    &bytes, width as u32, height as u32, image::ColorType::Rgba8).unwrap();
-                    stream.write(&bytes[..]).unwrap();
+                    
 
                 },
                 Event { action : EventAction::KeyPress {key}, modifiers: m} => {
