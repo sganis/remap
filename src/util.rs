@@ -9,6 +9,15 @@ pub fn port_is_listening(port: u16) -> bool {
     }
 }
 
+pub fn bits_to_number(bits: &[u8]) -> u8 {
+    let mut result: u8 = 0;
+    bits.iter().for_each(|&bit| {
+        result <<= 1;
+        result ^= bit;
+    });
+    result
+}
+
 // pub fn get_window_id(pid: u32, name: &str, display: u32) -> i32 {
 //     //let cmd = format!("xdotool search --pid {pid}");
 //     //println!("{}",cmd);

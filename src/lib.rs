@@ -456,6 +456,126 @@ impl Message for Encoding {
     }
 }
 
+#[derive(Debug)]
+pub enum ClientEvent {
+    // core spec
+    SetPixelFormat(PixelFormat),
+    SetEncodings(Vec<Encoding>),
+    FramebufferUpdateRequest {
+        incremental: bool,
+        x_position:  u16,
+        y_position:  u16,
+        width:       u16,
+        height:      u16,
+    },
+    KeyEvent {
+        down:        bool,
+        key:         u32,
+    },
+    PointerEvent {
+        button_mask: u8,
+        x_position:  u16,
+        y_position:  u16
+    },
+    CutText(String),
+    // extensions
+}
+
+impl Message for ClientEvent {
+    fn read_from<R: Read>(reader: &mut R) -> Result<ClientEvent> {
+        let message_type =
+            match reader.read_u8() {
+                Err(ref e) if e.kind() == IoErrorKind::UnexpectedEof =>
+                    return Err(Error::Disconnected),
+                result => result?
+            };
+        match message_type {
+            0 => {
+                reader.read_exact(&mut [0u8; 3])?;
+                Ok(ClientEvent::SetPixelFormat(PixelFormat::read_from(reader)?))
+            },
+            2 => {
+                reader.read_exact(&mut [0u8; 1])?;
+                let count = reader.read_u16::<BigEndian>()?;
+                let mut encodings = Vec::new();
+                for _ in 0..count {
+                    encodings.push(Encoding::read_from(reader)?);
+                }
+                Ok(ClientEvent::SetEncodings(encodings))
+            },
+            3 => {
+                Ok(ClientEvent::FramebufferUpdateRequest {
+                    incremental: reader.read_u8()? != 0,
+                    x_position:  reader.read_u16::<BigEndian>()?,
+                    y_position:  reader.read_u16::<BigEndian>()?,
+                    width:       reader.read_u16::<BigEndian>()?,
+                    height:      reader.read_u16::<BigEndian>()?
+                })
+            },
+            4 => {
+                let down = reader.read_u8()? != 0;
+                reader.read_exact(&mut [0u8; 2])?;
+                let key = reader.read_u32::<BigEndian>()?;
+                Ok(ClientEvent::KeyEvent { down, key })
+            },
+            5 => {
+                Ok(ClientEvent::PointerEvent {
+                    button_mask: reader.read_u8()?,
+                    x_position:  reader.read_u16::<BigEndian>()?,
+                    y_position:  reader.read_u16::<BigEndian>()?
+                })
+            },
+            6 => {
+                reader.read_exact(&mut [0u8; 3])?;
+                Ok(ClientEvent::CutText(String::read_from(reader)?))
+            },
+            _ => Err(Error::Unexpected("client to server message type"))
+        }
+    }
+    fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
+        match self {
+            ClientEvent::SetPixelFormat(ref pixel_format) => {
+                writer.write_u8(0)?;
+                writer.write_all(&[0u8; 3])?;
+                PixelFormat::write_to(pixel_format, writer)?;
+            },
+            ClientEvent::SetEncodings(ref encodings) => {
+                writer.write_u8(2)?;
+                writer.write_all(&[0u8; 1])?;
+                writer.write_u16::<BigEndian>(encodings.len() as u16)?; // TODO: check?
+                for encoding in encodings {
+                    Encoding::write_to(encoding, writer)?;
+                }
+            },
+            ClientEvent::FramebufferUpdateRequest { 
+                incremental, x_position, y_position, width, height 
+            } => {
+                writer.write_u8(3)?;
+                writer.write_u8(if *incremental { 1 } else { 0 })?;
+                writer.write_u16::<BigEndian>(*x_position)?;
+                writer.write_u16::<BigEndian>(*y_position)?;
+                writer.write_u16::<BigEndian>(*width)?;
+                writer.write_u16::<BigEndian>(*height)?;
+            },
+            ClientEvent::KeyEvent { down, key } => {
+                writer.write_u8(4)?;
+                writer.write_u8(if *down { 1 } else { 0 })?;
+                writer.write_all(&[0u8; 2])?;
+                writer.write_u32::<BigEndian>(*key)?;
+            },
+            ClientEvent::PointerEvent { button_mask, x_position, y_position } => {
+                writer.write_u8(5)?;
+                writer.write_u8(*button_mask)?;
+                writer.write_u16::<BigEndian>(*x_position)?;
+                writer.write_u16::<BigEndian>(*y_position)?;
+            },
+            ClientEvent::CutText(ref text) => {
+                String::write_to(text, writer)?;
+            }
+        }
+        Ok(())
+    }
+}
 
 #[derive(Debug)]
 pub struct Rectangle {
