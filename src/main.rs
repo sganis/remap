@@ -2,12 +2,12 @@ use std::{ops, os::raw::c_void, process};
 use std::io::{Read, Write};
 use std::process::Command;
 use std::net::{TcpStream};
-use gdk::{prelude::*, ModifierType};
-use gst_video::prelude::*;
+use gdk::{prelude::*, gdk_pixbuf, ModifierType};
 use gtk::prelude::*;
+
 use std::sync::{Mutex};
 use lazy_static::lazy_static;
-use remap::{Event, EventAction, Modifier, util};
+use remap::{Event, EventAction, Modifier, util, C2S, Message};
 
 
 lazy_static! {
@@ -35,14 +35,15 @@ impl Drop for AppWindow {
     }
 }
 
-fn create_ui(sink: &gst::Element) -> AppWindow {
+fn create_ui() -> AppWindow {
 
     let main_window = gtk::Window::new(gtk::WindowType::Toplevel);
     main_window.set_events(
         gdk::EventMask::PROPERTY_CHANGE_MASK
     );
 
-    let video_window = gtk::GLArea::new();
+
+    let video_window = gtk::DrawingArea::new();
     video_window.set_events(
         gdk::EventMask::BUTTON_PRESS_MASK |
         gdk::EventMask::SCROLL_MASK |
@@ -50,9 +51,19 @@ fn create_ui(sink: &gst::Element) -> AppWindow {
         gdk::EventMask::POINTER_MOTION_MASK
     );
 
+    video_window.connect_draw(move |_, context| {
+        println!("window redraw called.");
+        
+        //context.set_source_pixbuf(&pixbuf, 0, 0);
+        //context.paint();
+        return Inhibit(false);
+    });
+
+
     main_window.connect_key_press_event(move |_, e| {
         let name = e.keyval().name().unwrap().as_str().to_string();
         let modifiers = e.state();
+        let key = *e.keyval();
         println!("Key: {:?}, code: {}, state: {:?}, unicode: {:?}, name: {:?}, modifiers: {}", 
             e.keyval(), 
             *e.keyval(),
@@ -66,11 +77,18 @@ fn create_ui(sink: &gst::Element) -> AppWindow {
 
         let mut stream = &TCP.lock().unwrap()[0];
         if name == "Return" {            
-            let mut event = Event {
-                action: EventAction::KeyPress { key: name },
-                modifiers,
-            };
-            stream.write(&event.as_bytes()).unwrap();
+            
+            // let width = 1684;
+            // let height = 874;
+            // let event = C2S::FramebufferUpdateRequest { 
+            //     incremental: false, x_position: 0, y_position: 0, 
+            //     width: width as u16, 
+            //     height: height as u16                 
+            // };
+            
+            let message = C2S::KeyEvent { down: true, key  };
+            message.write_to(&mut stream).unwrap(); 
+
             let mut data = [0; 2]; // using 2 byte buffer
             match stream.read(&mut data) {
                 Ok(_) => {
@@ -81,6 +99,33 @@ fn create_ui(sink: &gst::Element) -> AppWindow {
                     println!("Failed to receive data: {}", e);
                 }
             }
+
+            // send update request
+
+            // let nbytes: usize = width * height * 4;
+            // let mut event = Event {
+            //     action: EventAction::FramebufferUpdateRequest {
+            //         incremental: false, x: 0, y: 0, 
+            //         width: width as u16, 
+            //         height: height as u16 },
+            //     modifiers,
+            // };
+            // stream.write(&event.as_bytes()).unwrap();
+            // let mut data = vec![0; nbytes as usize];
+            // match stream.read(&mut data) {
+            //     Ok(_) => {
+
+            //         // image::save_buffer("image.jpg",
+            //         //     &data, width as u32, height as u32, 
+            //         //     image::ColorType::Rgba8).unwrap();
+            //         println!("image saved");                            
+            //     },
+            //     Err(e) => {
+            //         println!("Failed to receive image: {}", e);
+            //     }
+            // }
+
+
         } else if name == "BackSpace" || name == "Delete" ||
                 name == "Page_Down" || name == "Page_Up" ||
                 name == "Up" || name == "Down" ||
@@ -110,6 +155,14 @@ fn create_ui(sink: &gst::Element) -> AppWindow {
                 }
             }                   
         }                
+        Inhibit(true)
+    });
+
+    main_window.connect_key_release_event(move |_, e| {
+        let key = *e.keyval();
+        let message = C2S::KeyEvent { down: false, key  };
+        let mut stream = &TCP.lock().unwrap()[0];
+        message.write_to(&mut stream).unwrap(); 
         Inhibit(true)
     });
 
@@ -156,18 +209,17 @@ fn create_ui(sink: &gst::Element) -> AppWindow {
         Inhibit(false)
     });
     
-    video_window.connect_resize(|_, width, height| {
-        return;
-        let mut stream = &TCP.lock().unwrap()[0];
-        let mut event = Event {
-            action: EventAction::Resize {width, height}, 
-            modifiers: 0
-        };   
-        stream.write(&event.as_bytes()).expect("Could not send resize event");
-        stream.flush().unwrap();
-        let mut data = [0; 2]; 
-        stream.read(&mut data).expect("Failed to recieved mouse move");
-    });
+    // video_window.connect_resize(|_, width, height| {
+    //     let mut stream = &TCP.lock().unwrap()[0];
+    //     let mut event = Event {
+    //         action: EventAction::Resize {width, height}, 
+    //         modifiers: 0
+    //     };   
+    //     stream.write(&event.as_bytes()).expect("Could not send resize event");
+    //     stream.flush().unwrap();
+    //     let mut data = [0; 2]; 
+    //     stream.read(&mut data).expect("Failed to recieved mouse move");
+    // });
 
     video_window.connect_motion_notify_event(|_, e| {
         return Inhibit(true);
@@ -188,84 +240,7 @@ fn create_ui(sink: &gst::Element) -> AppWindow {
         Inhibit(true)
     });
     
-    let video_overlay = sink.clone().dynamic_cast::<gst_video::VideoOverlay>().unwrap();
-
-    video_window.connect_realize(move |video| {
-        let video_overlay = &video_overlay;
-        let gdk_window = video.window().unwrap();
-
-        if !gdk_window.ensure_native() {
-            println!("Can't create native window for widget");
-            process::exit(-1);
-        }
-
-        let display_type_name = gdk_window.display().type_().name();
-        println!("display type name: {display_type_name}");
-        
-        #[cfg(windows)]
-        {
-            // Check if we're using X11 or ...
-            if display_type_name == "GdkWin32Display" {
-                extern "C" {
-                    pub fn gdk_win32_window_get_handle(
-                        window: *mut glib::gobject_ffi::GObject,
-                    ) -> *mut c_void;
-                }
-
-                #[allow(clippy::cast_ptr_alignment)]
-                unsafe {
-                    let xid = gdk_win32_window_get_handle(gdk_window.as_ptr() as *mut _);
-                    video_overlay.set_window_handle(xid as usize);
-                }
-            } else {
-                println!("Add support for display type '{}'", display_type_name);
-                process::exit(-1);
-            }
-        } 
-        #[cfg(linux)]
-        {
-            // Check if we're using X11 or ...
-            if display_type_name == "GdkX11Display" {
-                extern "C" {
-                    pub fn gdk_x11_window_get_xid(
-                        window: *mut glib::gobject_ffi::GObject,
-                    ) -> *mut c_void;
-                }
-
-                #[allow(clippy::cast_ptr_alignment)]
-                unsafe {
-                    let xid = gdk_x11_window_get_xid(gdk_window.as_ptr() as *mut _);
-                    video_overlay.set_window_handle(xid as usize);
-                }
-            } else {
-                println!("Add support for display type '{}'", display_type_name);
-                process::exit(-1);
-            }
-        }
-        #[cfg(macos)]
-        {
-            if display_type_name == "GdkQuartzDisplay" {
-                extern "C" {
-                    pub fn gdk_quartz_window_get_nsview(
-                        window: *mut glib::gobject_ffi::GObject,
-                    ) -> *mut c_void;
-                }
-
-                #[allow(clippy::cast_ptr_alignment)]
-                unsafe {
-                    let window = gdk_quartz_window_get_nsview(gdk_window.as_ptr() as *mut _);
-                    video_overlay.set_window_handle(window as usize);
-                }
-            } else {
-                println!(
-                    "Unsupported display type '{}', compile with `--feature `",
-                    display_type_name
-                );
-                process::exit(-1);
-            }
-        }
-    });
-
+    
     let vbox = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     vbox.pack_start(&video_window, true, true, 0);
     main_window.add(&vbox);
@@ -284,8 +259,7 @@ pub fn main() {
     //let host = "ecclin.chaintrust.com";
     //let host = "ecclap.chaintrust.com";
     let host = "192.168.100.202";
-    let port1: u16 = 10100;
-    let port2 = port1 + 100;
+    let port: u16 = 10100;
     
     // video overlay does not work with this env var
     std::env::set_var("GTK_CSD","0");
@@ -296,18 +270,17 @@ pub fn main() {
 
     // Spawn ssh tunnel thread
     std::thread::spawn(move|| {
-        if util::port_is_listening(port1) {
+        if util::port_is_listening(port) {
             println!("Tunnel exists, reusing...");            
             tx.send(()).expect("Could not send signal on channel.");
         } else {
             println!("Connecting...");
             let _handle = Command::new("ssh")
                 .args(["-oStrictHostkeyChecking=no","-N","-L", 
-                    &format!("{port1}:127.0.0.1:{port1}"),"-L",
-                    &format!("{port2}:127.0.0.1:{port2}"),
+                    &format!("{port}:127.0.0.1:{port}"),
                     &format!("{user}@{host}")])
                 .spawn().unwrap();
-            while !util::port_is_listening(port1) {
+            while !util::port_is_listening(port) {
                 std::thread::sleep(std::time::Duration::from_millis(200));
             }
             tx.send(()).expect("Could not send signal on channel.");
@@ -319,13 +292,13 @@ pub fn main() {
         .expect("Could not receive from channel.");
     println!("Tunnel Ok.");
     
-    // event connection
-    let event_stream = TcpStream::connect(&format!("127.0.0.1:{port2}"))
+    //  connection
+    let stream = TcpStream::connect(&format!("127.0.0.1:{port}"))
         .expect("Cannot connect to input port");
     println!("Event connection Ok.");
     {
         let mut guard = TCP.lock().unwrap();
-        guard.push(event_stream);
+        guard.push(stream);
     }
 
     // Initialize GTK
@@ -334,108 +307,10 @@ pub fn main() {
         return;
     }
 
-    // Initialize GStreamer
-    if let Err(err) = gst::init() {
-        eprintln!("Failed to initialize Gst: {}", err);
-        return;
-    }
-
-    let source = gst::ElementFactory::make("tcpclientsrc")
-        .name("source")
-        .property_from_str("host", "127.0.0.1")
-        .property_from_str("port", &format!("{port1}"))
-        .build()
-        .expect("Could not create source element."); 
-    let decoder = gst::ElementFactory::make("jpegdec")
-        .name("decoder")
-        .build()
-        .expect("Could not create decoder element");    
-    let sink = gst::ElementFactory::make("glimagesink")
-        .name("sink")
-        .build()
-        .expect("Could not create sink element");    
-    let window = create_ui(&sink);
-
-    // Create the empty pipeline
-    let pipeline = gst::Pipeline::builder().name("pipeline").build();
-    pipeline.add_many(&[&source, &decoder, &sink]).unwrap();
-    source.link(&decoder).expect("Elements source-demuxer could not be linked.");
-    decoder.link(&sink).expect("Elements decoder-sink could not be linked.");
-
-    // attach video to window
-    //let window = create_ui(&sink);
-
-    // // attache test video
-    // let uri = "https://www.freedesktop.org/software/gstreamer-sdk/\
-    //             data/media/sintel_trailer-480p.webm";
-    // let playbin = gst::ElementFactory::make("playbin")
-    //     .property("uri", uri).build().unwrap();
-    
-    // let window = create_ui(&playbin);
-    // playbin.set_state(gst::State::Playing).unwrap();
-    
-
-
-    let bus = pipeline.bus().unwrap();
-    bus.add_signal_watch();
-
-    let pipeline_weak = pipeline.downgrade();
-    let sink_weak = sink.downgrade();
-
-    bus.connect_message(None, move |_, msg| {        
-        let pipeline = pipeline_weak.upgrade();
-        let sink = sink_weak.upgrade();
-        if pipeline.is_none() && sink.is_none() {
-            return;
-        }
-        let pipeline = pipeline.unwrap();
-        
-        //println!("bus message: {:?} ", msg.view());
-
-        match msg.view() {
-            //  This is called when an End-Of-Stream message is posted on the bus.
-            // We just set the pipeline to READY (which stops playback).
-            gst::MessageView::Eos(..) => {
-                println!("End-Of-Stream reached.");
-                pipeline
-                    .set_state(gst::State::Ready)
-                    .expect("Unable to set the pipeline to the `Ready` state");
-            },
-            // This is called when an error message is posted on the bus
-            gst::MessageView::Error(err) => {
-                println!(
-                    "ERROR: {:?}: {} ({:?})",
-                    err.src().map(|s| s.path_string()),
-                    err.error(),
-                    err.debug()
-                );
-            },
-            // This is called when the pipeline changes states. We use it to
-            // keep track of the current state.
-            gst::MessageView::StateChanged(state_changed) => {
-                if state_changed.src().map(|s| s == &pipeline).unwrap_or(false) {
-                    println!("State set to {:?}", state_changed.current());
-                }
-            },
-            gst::MessageView::Tag(m) => {
-                println!("TAG: {:?}", m);
-            },
-            gst::MessageView::Element(m) => {
-                // println!("ELEMENT: {:?}", m);
-            },
-            _m => {
-                //println!("BUS: {:?}", m);
-            },
-        }
-    });
-
-    pipeline.set_state(gst::State::Playing).expect("Unable to set the pipeline to the `Playing` state");
-
+    let window = create_ui();
     //gdk::set_show_events(true);
 
     gtk::main();
 
     window.hide();
-    pipeline.set_state(gst::State::Null).expect("Unable to set the pipeline to the `Null` state");
-    bus.remove_signal_watch();
 }

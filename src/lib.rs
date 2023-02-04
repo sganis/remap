@@ -23,10 +23,10 @@ bitflags! {
 pub enum EventAction {
     FramebufferUpdateRequest {
         incremental: bool,
-        x:  u16,
-        y:  u16,
-        width:       u16,
-        height:      u16,
+        x: u16,
+        y: u16,
+        width: u16,
+        height: u16,
     },
     KeyPress {
         key: String, 
@@ -140,6 +140,47 @@ impl Input {
         self.enigo.as_mut().unwrap().key_click(k);
     }
 }
+
+
+pub trait Message {
+    fn read_from<R: Read>(reader: &mut R) -> Result<Self> where Self: Sized;
+    fn write_to<W: Write>(&self, writer: &mut W) -> Result<()>;
+}
+
+impl Message for Vec<u8> {
+    fn read_from<R: Read>(reader: &mut R) -> Result<Vec<u8>> {
+        let length = reader.read_u32::<BigEndian>()?;
+        let mut buffer = vec![0; length as usize];
+        reader.read_exact(&mut buffer)?;
+        Ok(buffer)
+    }
+
+    fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
+        let length = self.len() as u32; // TODO: check?
+        writer.write_u32::<BigEndian>(length)?;
+        writer.write_all(&self)?;
+        Ok(())
+    }
+}
+
+/* All strings in VNC are either ASCII or Latin-1, both of which
+   are embedded in Unicode. */
+impl Message for String {
+    fn read_from<R: Read>(reader: &mut R) -> Result<String> {
+        let length = reader.read_u32::<BigEndian>()?;
+        let mut string = vec![0; length as usize];
+        reader.read_exact(&mut string)?;
+        Ok(string.iter().map(|c| *c as char).collect())
+    }
+
+    fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
+        let length = self.len() as u32; // TODO: check?
+        writer.write_u32::<BigEndian>(length)?;
+        writer.write_all(&self.chars().map(|c| c as u8).collect::<Vec<u8>>())?;
+        Ok(())
+    }
+}
+
 
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -319,47 +360,6 @@ pub enum C2S {
     CutText(String),
     // extensions
 }
-
-pub trait Message {
-    fn read_from<R: Read>(reader: &mut R) -> Result<Self> where Self: Sized;
-    fn write_to<W: Write>(&self, writer: &mut W) -> Result<()>;
-}
-
-impl Message for Vec<u8> {
-    fn read_from<R: Read>(reader: &mut R) -> Result<Vec<u8>> {
-        let length = reader.read_u32::<BigEndian>()?;
-        let mut buffer = vec![0; length as usize];
-        reader.read_exact(&mut buffer)?;
-        Ok(buffer)
-    }
-
-    fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
-        let length = self.len() as u32; // TODO: check?
-        writer.write_u32::<BigEndian>(length)?;
-        writer.write_all(&self)?;
-        Ok(())
-    }
-}
-
-/* All strings in VNC are either ASCII or Latin-1, both of which
-   are embedded in Unicode. */
-impl Message for String {
-    fn read_from<R: Read>(reader: &mut R) -> Result<String> {
-        let length = reader.read_u32::<BigEndian>()?;
-        let mut string = vec![0; length as usize];
-        reader.read_exact(&mut string)?;
-        Ok(string.iter().map(|c| *c as char).collect())
-    }
-
-    fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
-        let length = self.len() as u32; // TODO: check?
-        writer.write_u32::<BigEndian>(length)?;
-        writer.write_all(&self.chars().map(|c| c as u8).collect::<Vec<u8>>())?;
-        Ok(())
-    }
-}
-
-
 
 impl Message for C2S {
     fn read_from<R: Read>(reader: &mut R) -> Result<C2S> {
