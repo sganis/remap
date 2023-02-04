@@ -11,7 +11,7 @@ use xcb::{XidNew};
 use glib::clone;
 use clap::Parser;
 use serde::Deserialize;
-use remap::{Event, EventAction, Input, Geometry};
+use remap::{Event, EventAction, Input, Geometry, C2S, Message};
 use remap::util;
 
 #[derive(Parser)]
@@ -43,9 +43,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let app = args[0];
     let args = &args[1..];       
     let desktop = app == "desktop";
-    let port1 = cli.port.unwrap_or(10100);
-    let port2 = port1 + 100;
-    let input_addr = format!("127.0.0.1:{port2}");
+    let port = cli.port.unwrap_or(10100);
+    let input_addr = format!("127.0.0.1:{port}");
     let mut display_proc = None;
     let mut app_proc = None;
     let mut xid = 0;
@@ -54,8 +53,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Display: :{}", display);
     println!("App: {}", app);
     println!("Args: {:?}", args);
-    println!("Port 1: {}", port1);
-    println!("Port 2: {}", port2);
+    println!("Port: {}", port);
     println!("Verbosity: {}", cli.verbose);
 
     if !desktop {
@@ -158,6 +156,20 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         loop {
+            let mut message = C2S::read_from(&mut stream).unwrap();
+            match message {
+                C2S::KeyEvent {down, key} => {
+                    let name = gdk::keys::Key::from(key).name().unwrap();
+                    println!("key: {}, down: {}, name: {}", key, down, name);
+                },
+                
+                m => {
+                    println!("message");
+                }
+            }
+
+            continue;
+
             let mut buf = vec![0; 32];
             let n = stream.read(&mut buf)?;
             // println!("event recieved: {:?}", buf);

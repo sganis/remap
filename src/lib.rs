@@ -5,9 +5,7 @@ use serde::{Deserialize, Serialize};
 use bitflags::bitflags;
 
 #[cfg(unix)]
-use enigo::{Enigo, MouseButton as EnigoMouseButton, 
-    MouseControllable, Key, KeyboardControllable};
-
+use enigo::{Enigo, MouseButton as EnigoMouseButton, MouseControllable, Key, KeyboardControllable};
 
 bitflags! {
     #[derive(Serialize, Deserialize)]
@@ -141,11 +139,133 @@ impl Input {
     }
 }
 
-
 pub trait Message {
     fn read_from<R: Read>(reader: &mut R) -> Result<Self> where Self: Sized;
     fn write_to<W: Write>(&self, writer: &mut W) -> Result<()>;
 }
+
+#[derive(Debug)]
+pub enum C2S {
+    // core spec
+    SetPixelFormat(PixelFormat),
+    SetEncodings(Vec<Encoding>),
+    FramebufferUpdateRequest {
+        incremental: bool,
+        x_position:  u16,
+        y_position:  u16,
+        width:       u16,
+        height:      u16,
+    },
+    KeyEvent {
+        down:        bool,
+        key:         u32,
+    },
+    PointerEvent {
+        button_mask: u8,
+        x_position:  u16,
+        y_position:  u16
+    },
+    CutText(String),
+    // extensions
+}
+
+impl Message for C2S {
+    fn read_from<R: Read>(reader: &mut R) -> Result<C2S> {
+        let message_type =
+            match reader.read_u8() {
+                Err(ref e) if e.kind() == IoErrorKind::UnexpectedEof =>
+                    return Err(Error::Disconnected),
+                result => result?
+            };
+        match message_type {
+            0 => {
+                reader.read_exact(&mut [0u8; 3])?;
+                Ok(C2S::SetPixelFormat(PixelFormat::read_from(reader)?))
+            },
+            2 => {
+                reader.read_exact(&mut [0u8; 1])?;
+                let count = reader.read_u16::<BigEndian>()?;
+                let mut encodings = Vec::new();
+                for _ in 0..count {
+                    encodings.push(Encoding::read_from(reader)?);
+                }
+                Ok(C2S::SetEncodings(encodings))
+            },
+            3 => {
+                Ok(C2S::FramebufferUpdateRequest {
+                    incremental: reader.read_u8()? != 0,
+                    x_position:  reader.read_u16::<BigEndian>()?,
+                    y_position:  reader.read_u16::<BigEndian>()?,
+                    width:       reader.read_u16::<BigEndian>()?,
+                    height:      reader.read_u16::<BigEndian>()?
+                })
+            },
+            4 => {
+                let down = reader.read_u8()? != 0;
+                reader.read_exact(&mut [0u8; 2])?;
+                let key = reader.read_u32::<BigEndian>()?;
+                Ok(C2S::KeyEvent { down, key })
+            },
+            5 => {
+                Ok(C2S::PointerEvent {
+                    button_mask: reader.read_u8()?,
+                    x_position:  reader.read_u16::<BigEndian>()?,
+                    y_position:  reader.read_u16::<BigEndian>()?
+                })
+            },
+            6 => {
+                reader.read_exact(&mut [0u8; 3])?;
+                Ok(C2S::CutText(String::read_from(reader)?))
+            },
+            _ => Err(Error::Unexpected("client to server message type"))
+        }
+    }
+    fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
+        match self {
+            C2S::SetPixelFormat(ref pixel_format) => {
+                writer.write_u8(0)?;
+                writer.write_all(&[0u8; 3])?;
+                PixelFormat::write_to(pixel_format, writer)?;
+            },
+            C2S::SetEncodings(ref encodings) => {
+                writer.write_u8(2)?;
+                writer.write_all(&[0u8; 1])?;
+                writer.write_u16::<BigEndian>(encodings.len() as u16)?; // TODO: check?
+                for encoding in encodings {
+                    Encoding::write_to(encoding, writer)?;
+                }
+            },
+            C2S::FramebufferUpdateRequest { 
+                incremental, x_position, y_position, width, height 
+            } => {
+                writer.write_u8(3)?;
+                writer.write_u8(if *incremental { 1 } else { 0 })?;
+                writer.write_u16::<BigEndian>(*x_position)?;
+                writer.write_u16::<BigEndian>(*y_position)?;
+                writer.write_u16::<BigEndian>(*width)?;
+                writer.write_u16::<BigEndian>(*height)?;
+            },
+            C2S::KeyEvent { down, key } => {
+                writer.write_u8(4)?;
+                writer.write_u8(if *down { 1 } else { 0 })?;
+                writer.write_all(&[0u8; 2])?;
+                writer.write_u32::<BigEndian>(*key)?;
+            },
+            C2S::PointerEvent { button_mask, x_position, y_position } => {
+                writer.write_u8(5)?;
+                writer.write_u8(*button_mask)?;
+                writer.write_u16::<BigEndian>(*x_position)?;
+                writer.write_u16::<BigEndian>(*y_position)?;
+            },
+            C2S::CutText(ref text) => {
+                String::write_to(text, writer)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+
 
 impl Message for Vec<u8> {
     fn read_from<R: Read>(reader: &mut R) -> Result<Vec<u8>> {
@@ -336,126 +456,6 @@ impl Message for Encoding {
     }
 }
 
-#[derive(Debug)]
-pub enum C2S {
-    // core spec
-    SetPixelFormat(PixelFormat),
-    SetEncodings(Vec<Encoding>),
-    FramebufferUpdateRequest {
-        incremental: bool,
-        x_position:  u16,
-        y_position:  u16,
-        width:       u16,
-        height:      u16,
-    },
-    KeyEvent {
-        down:        bool,
-        key:         u32,
-    },
-    PointerEvent {
-        button_mask: u8,
-        x_position:  u16,
-        y_position:  u16
-    },
-    CutText(String),
-    // extensions
-}
-
-impl Message for C2S {
-    fn read_from<R: Read>(reader: &mut R) -> Result<C2S> {
-        let message_type =
-            match reader.read_u8() {
-                Err(ref e) if e.kind() == IoErrorKind::UnexpectedEof =>
-                    return Err(Error::Disconnected),
-                result => result?
-            };
-        match message_type {
-            0 => {
-                reader.read_exact(&mut [0u8; 3])?;
-                Ok(C2S::SetPixelFormat(PixelFormat::read_from(reader)?))
-            },
-            2 => {
-                reader.read_exact(&mut [0u8; 1])?;
-                let count = reader.read_u16::<BigEndian>()?;
-                let mut encodings = Vec::new();
-                for _ in 0..count {
-                    encodings.push(Encoding::read_from(reader)?);
-                }
-                Ok(C2S::SetEncodings(encodings))
-            },
-            3 => {
-                Ok(C2S::FramebufferUpdateRequest {
-                    incremental: reader.read_u8()? != 0,
-                    x_position:  reader.read_u16::<BigEndian>()?,
-                    y_position:  reader.read_u16::<BigEndian>()?,
-                    width:       reader.read_u16::<BigEndian>()?,
-                    height:      reader.read_u16::<BigEndian>()?
-                })
-            },
-            4 => {
-                let down = reader.read_u8()? != 0;
-                reader.read_exact(&mut [0u8; 2])?;
-                let key = reader.read_u32::<BigEndian>()?;
-                Ok(C2S::KeyEvent { down, key })
-            },
-            5 => {
-                Ok(C2S::PointerEvent {
-                    button_mask: reader.read_u8()?,
-                    x_position:  reader.read_u16::<BigEndian>()?,
-                    y_position:  reader.read_u16::<BigEndian>()?
-                })
-            },
-            6 => {
-                reader.read_exact(&mut [0u8; 3])?;
-                Ok(C2S::CutText(String::read_from(reader)?))
-            },
-            _ => Err(Error::Unexpected("client to server message type"))
-        }
-    }
-    fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
-        match self {
-            C2S::SetPixelFormat(ref pixel_format) => {
-                writer.write_u8(0)?;
-                writer.write_all(&[0u8; 3])?;
-                PixelFormat::write_to(pixel_format, writer)?;
-            },
-            C2S::SetEncodings(ref encodings) => {
-                writer.write_u8(2)?;
-                writer.write_all(&[0u8; 1])?;
-                writer.write_u16::<BigEndian>(encodings.len() as u16)?; // TODO: check?
-                for encoding in encodings {
-                    Encoding::write_to(encoding, writer)?;
-                }
-            },
-            C2S::FramebufferUpdateRequest { 
-                incremental, x_position, y_position, width, height 
-            } => {
-                writer.write_u8(3)?;
-                writer.write_u8(if *incremental { 1 } else { 0 })?;
-                writer.write_u16::<BigEndian>(*x_position)?;
-                writer.write_u16::<BigEndian>(*y_position)?;
-                writer.write_u16::<BigEndian>(*width)?;
-                writer.write_u16::<BigEndian>(*height)?;
-            },
-            C2S::KeyEvent { down, key } => {
-                writer.write_u8(4)?;
-                writer.write_u8(if *down { 1 } else { 0 })?;
-                writer.write_all(&[0u8; 2])?;
-                writer.write_u32::<BigEndian>(*key)?;
-            },
-            C2S::PointerEvent { button_mask, x_position, y_position } => {
-                writer.write_u8(5)?;
-                writer.write_u8(*button_mask)?;
-                writer.write_u16::<BigEndian>(*x_position)?;
-                writer.write_u16::<BigEndian>(*y_position)?;
-            },
-            C2S::CutText(ref text) => {
-                String::write_to(text, writer)?;
-            }
-        }
-        Ok(())
-    }
-}
 
 #[derive(Debug)]
 pub struct Rectangle {
