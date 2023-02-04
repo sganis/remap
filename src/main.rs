@@ -1,13 +1,12 @@
-use std::{ops, os::raw::c_void, process};
+use std::{ops, process};
 use std::io::{Read, Write};
 use std::process::Command;
 use std::net::{TcpStream};
-use gdk::{prelude::*, gdk_pixbuf, ModifierType};
+use gdk::{prelude::*, gdk_pixbuf};
 use gtk::prelude::*;
-
 use std::sync::{Mutex};
 use lazy_static::lazy_static;
-use remap::{Event, EventAction, Modifier, util, ClientEvent, Message};
+use remap::{util, ClientEvent, ServerEvent, Message};
 
 
 lazy_static! {
@@ -71,81 +70,37 @@ fn create_ui() -> AppWindow {
             e.state(), 
             e.keyval().to_unicode(), 
             name, modifiers);
-        //let modifiers = e.state().bits();     
-        // let a = ModifierType::CONTROL_MASK;
-        // let m = e.state().contains(a);
-        // println!(" contains control: {}", m);
 
         let mut stream = &TCP.lock().unwrap()[0];
         let message = ClientEvent::KeyEvent { down: true, key  };
         message.write_to(&mut stream).unwrap(); 
 
-            // let mut data = [0; 2]; // using 2 byte buffer
-            // match stream.read(&mut data) {
-            //     Ok(_) => {
-            //         let c = String::from_utf8_lossy(&data[..]);
-            //         println!("Response: {}", c);                            
-            //     },
-            //     Err(e) => {
-            //         println!("Failed to receive data: {}", e);
-            //     }
-            // }
+        if name == "F5" {
+            let width = 1684;
+            let height = 874;
+            let message = ClientEvent::FramebufferUpdateRequest { 
+                incremental: false, x_position: 0, y_position: 0, width, height };
+            message.write_to(&mut stream).unwrap(); 
+            let reply = match ServerEvent::read_from(&mut stream) {
+                Err(e) => {
+                    println!("Server disconnected: {:?}", e);
+                    return Inhibit(true);
+                },
+                Ok(o) => o,
+            };
+            match reply {
+                ServerEvent::FramebufferUpdate { count } => {
+                    let nbytes = width as usize * height as usize * 4 as usize;
+                    let mut bytes = vec![0; nbytes as usize];
+                    stream.read_exact(&mut bytes).unwrap();
+                    println!("update reply");
+                },
+                _ => {
+                    println!("other reply");
+                }
+            }
+        }
 
-            // send update request
-
-            // let nbytes: usize = width * height * 4;
-            // let mut event = Event {
-            //     action: EventAction::FramebufferUpdateRequest {
-            //         incremental: false, x: 0, y: 0, 
-            //         width: width as u16, 
-            //         height: height as u16 },
-            //     modifiers,
-            // };
-            // stream.write(&event.as_bytes()).unwrap();
-            // let mut data = vec![0; nbytes as usize];
-            // match stream.read(&mut data) {
-            //     Ok(_) => {
-
-            //         // image::save_buffer("image.jpg",
-            //         //     &data, width as u32, height as u32, 
-            //         //     image::ColorType::Rgba8).unwrap();
-            //         println!("image saved");                            
-            //     },
-            //     Err(e) => {
-            //         println!("Failed to receive image: {}", e);
-            //     }
-            // }
-
-
-        // } else if name == "BackSpace" || name == "Delete" ||
-        //         name == "Page_Down" || name == "Page_Up" ||
-        //         name == "Up" || name == "Down" ||
-        //         name == "Left" || name == "Right" ||
-        //         name == "Home" || name == "End" ||
-        //         name == "Tab" || name == "Escape" {
-        //     let mut event = Event {
-        //         action: EventAction::KeyPress { key: name },
-        //         modifiers,
-        //     };
-        //     stream.write(&event.as_bytes()).unwrap();
-        //     //stream.flush().unwrap();
-        // } else {
-        //     match e.keyval().to_unicode() {
-        //         Some(k) => {
-        //             let mut event = Event {
-        //                 action: EventAction::KeyPress { key: k.to_string() },
-        //                 modifiers,
-        //             };
-        //             stream.write(&event.as_bytes()).unwrap();
-        //             //stream.flush().unwrap();
-        //             println!("key sent: {k}");
-                            
-        //         },
-        //         None => {
-        //             println!("key not supported: {name}");
-        //         }
-        //     }                   
-        // }                
         Inhibit(true)
     });
 
@@ -158,16 +113,15 @@ fn create_ui() -> AppWindow {
     });
 
     video_window.connect_button_press_event(|_, e| {
-        //println!("{:?}", e);    
         println!("{:?}, state: {:?}, button: {}", e.position(), e.state(), e.button());
-        let button = e.button();
-        let b1: u8 = (button == 1).into();
-        let b2: u8 = (button == 2).into();
-        let b3: u8 = (button == 3).into();
-        let bits: Vec<u8> = vec![b1, b2, b3, 0, 0, 0, 0, 0];
-        let buttons: u8 = util::bits_to_number(&bits);
-        println!("bits: {:?}, number: {}", bits, buttons);
-        
+       
+        let buttons = match e.button() {
+            1 => 128,
+            2 => 64,
+            3 => 32,
+            _ => 0,
+        };
+
         let message = ClientEvent::PointerEvent { 
             button_mask: buttons, 
             x_position: e.position().0 as u16,
@@ -177,29 +131,6 @@ fn create_ui() -> AppWindow {
         let mut stream = &TCP.lock().unwrap()[0];
         message.write_to(&mut stream).unwrap(); 
         
-        // let mut event = Event {
-        //     action: EventAction::Click {
-        //         x: e.position().0 as i32,
-        //         y: e.position().1 as i32,
-        //         button,
-        //     },
-        //     modifiers,
-        // };
-        
-        // stream.write(&event.as_bytes()).expect("Could not send mouse event");
-
-        // if button == 1 {
-        //     let mut data = [0; 2]; 
-        //     match stream.read(&mut data) {
-        //         Ok(_) => {
-        //             let c = String::from_utf8_lossy(&data[..]);
-        //             println!("Response: {}", c);                            
-        //         },
-        //         Err(e) => {
-        //             println!("Failed to receive data: {}", e);
-        //         }
-        //     }
-        // }
         Inhibit(true)
     });
 
@@ -216,8 +147,27 @@ fn create_ui() -> AppWindow {
     });
 
     video_window.connect_scroll_event(move |_, e| {
-        println!("{:?}", e);    
         println!("{:?}, state: {:?}, dir: {:?}", e.position(), e.state(), e.direction());
+ 
+        // let b4: u8 = util::bits_to_number(&vec![0, 0, 0, 1, 0, 0, 0, 0]);
+        // let b5: u8 = util::bits_to_number(&vec![0, 0, 0, 0, 1, 0, 0, 0]);
+            
+        let buttons = if e.direction() == gdk::ScrollDirection::Up { 16 } else { 8 };
+        let message = ClientEvent::PointerEvent { 
+            button_mask: buttons, 
+            x_position: e.position().0 as u16,
+            y_position: e.position().1 as u16, 
+        };        
+        
+        let mut stream = &TCP.lock().unwrap()[0];
+        message.write_to(&mut stream).unwrap(); 
+        let message = ClientEvent::PointerEvent { 
+            button_mask: 0, 
+            x_position: e.position().0 as u16,
+            y_position: e.position().1 as u16, 
+        };        
+        message.write_to(&mut stream).unwrap(); 
+
         Inhibit(true)
     });
     
@@ -226,37 +176,15 @@ fn create_ui() -> AppWindow {
         Inhibit(false)
     });
     
-    // video_window.connect_resize(|_, width, height| {
-    //     let mut stream = &TCP.lock().unwrap()[0];
-    //     let mut event = Event {
-    //         action: EventAction::Resize {width, height}, 
-    //         modifiers: 0
-    //     };   
-    //     stream.write(&event.as_bytes()).expect("Could not send resize event");
-    //     stream.flush().unwrap();
-    //     let mut data = [0; 2]; 
-    //     stream.read(&mut data).expect("Failed to recieved mouse move");
-    // });
-
     video_window.connect_motion_notify_event(|_, e| {
-        return Inhibit(true);
-        //println!("{:?}, state: {:?}", e.position(), e.state());
-        let modifiers = e.state().bits();
-        let mut stream = &TCP.lock().unwrap()[0];
-        let mut event = Event {
-            action: EventAction::MouseMove {
-                x: e.position().0 as i32,
-                y: e.position().1 as i32,
-            },
-            modifiers,
-        };        
-        stream.write(&event.as_bytes()).expect("Could not send mouse move event");
-        stream.flush().unwrap();
-        let mut data = [0; 2]; 
-        stream.read(&mut data).expect("Failed to recieved mouse move");
+        
         Inhibit(true)
     });
     
+    let timeout_id = glib::timeout_add_local(std::time::Duration::from_millis(500), || {
+
+        Continue(true)
+    });
     
     let vbox = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     vbox.pack_start(&video_window, true, true, 0);
@@ -266,7 +194,7 @@ fn create_ui() -> AppWindow {
 
     AppWindow {
         main_window,
-        timeout_id: None // Some(timeout_id),
+        timeout_id: Some(timeout_id),
     }
 }
 
@@ -284,6 +212,8 @@ pub fn main() {
     
     // make ssh connection
     let (tx,rx) = std::sync::mpsc::channel();
+    // read/write socket
+    //let (stream_tx,stream_rx) = std::sync::mpsc::channel();
 
     // Spawn ssh tunnel thread
     std::thread::spawn(move|| {
@@ -305,8 +235,7 @@ pub fn main() {
     });
     
     // wait for signal
-    rx.recv()
-        .expect("Could not receive from channel.");
+    rx.recv().expect("Could not receive from channel.");
     println!("Tunnel Ok.");
     
     //  connection
@@ -317,6 +246,22 @@ pub fn main() {
         let mut guard = TCP.lock().unwrap();
         guard.push(stream);
     }
+
+    // spwan a thread to read socket
+    // std::thread::spawn(move|| {
+    //     loop {
+    //         let mut stream = &TCP.lock().unwrap()[0];
+    //         let reply = match ServerEvent::read_from(&mut stream) {
+    //             Err(e) => {
+    //                 println!("Server disconnected: {:?}", e);
+    //                 break;
+    //             },
+    //             Ok(o) => o,            
+    //         };
+    //         println!("Reply from server");
+    //         //stream_tx.send(reply).expect("Could not send signal on channel.");
+    //     }
+    // });
 
     // Initialize GTK
     if let Err(err) = gtk::init() {

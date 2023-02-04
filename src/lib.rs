@@ -512,7 +512,7 @@ impl Message for Colour {
 }
 
 #[derive(Debug)]
-pub enum S2C {
+pub enum ServerEvent {
     // core spec
     FramebufferUpdate {
         count:        u16,
@@ -527,8 +527,8 @@ pub enum S2C {
     // extensions
 }
 
-impl Message for S2C {
-    fn read_from<R: Read>(reader: &mut R) -> Result<S2C> {
+impl Message for ServerEvent {
+    fn read_from<R: Read>(reader: &mut R) -> Result<ServerEvent> {
         let message_type =
             match reader.read_u8() {
                 Err(ref e) if e.kind() == IoErrorKind::UnexpectedEof =>
@@ -538,7 +538,7 @@ impl Message for S2C {
         match message_type {
             0 => {
                 reader.read_exact(&mut [0u8; 1])?;
-                Ok(S2C::FramebufferUpdate {
+                Ok(ServerEvent::FramebufferUpdate {
                     count: reader.read_u16::<BigEndian>()?
                 })
             },
@@ -550,14 +550,14 @@ impl Message for S2C {
                 for _ in 0..count {
                     colours.push(Colour::read_from(reader)?);
                 }
-                Ok(S2C::SetColourMapEntries { first_colour, colours })
+                Ok(ServerEvent::SetColourMapEntries { first_colour, colours })
             },
             2 => {
-                Ok(S2C::Bell)
+                Ok(ServerEvent::Bell)
             },
             3 => {
                 reader.read_exact(&mut [0u8; 3])?;
-                Ok(S2C::CutText(String::read_from(reader)?))
+                Ok(ServerEvent::CutText(String::read_from(reader)?))
             },
             _ => Err(Error::Unexpected("server to client message type"))
         }
@@ -565,12 +565,12 @@ impl Message for S2C {
 
     fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
         match self {
-            S2C::FramebufferUpdate { count } => {
+            ServerEvent::FramebufferUpdate { count } => {
                 writer.write_u8(0)?;
                 writer.write_all(&[0u8; 1])?;
                 writer.write_u16::<BigEndian>(*count)?;
             },
-            S2C::SetColourMapEntries { first_colour, ref colours } => {
+            ServerEvent::SetColourMapEntries { first_colour, ref colours } => {
                 writer.write_u8(1)?;
                 writer.write_all(&[0u8; 1])?;
                 writer.write_u16::<BigEndian>(*first_colour)?;
@@ -578,10 +578,10 @@ impl Message for S2C {
                     Colour::write_to(colour, writer)?;
                 }
             },
-            S2C::Bell => {
+            ServerEvent::Bell => {
                 writer.write_u8(2)?;
             },
-            S2C::CutText(ref text) => {
+            ServerEvent::CutText(ref text) => {
                 writer.write_u8(3)?;
                 writer.write_all(&[0u8; 3])?;
                 String::write_to(text, writer)?;
