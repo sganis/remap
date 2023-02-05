@@ -137,6 +137,48 @@ impl Input {
         println!(" key detected: {:?}", k);
         self.enigo.as_mut().unwrap().key_click(k);
     }
+    pub fn key_down(&mut self, key: &str) {
+        println!(" key to match: {:?}", key);
+        let k = match key {
+            "Return" => Key::Return,
+            "BackSpace" => Key::Backspace,
+            "Delete" => Key::Delete,
+            "Page_Up" => Key::PageUp,
+            "Page_Down" => Key::PageDown,
+            "Up" => Key::UpArrow,
+            "Down" => Key::DownArrow,
+            "Left" => Key::LeftArrow,
+            "Right" => Key::RightArrow,
+            "End" => Key::End,
+            "Home" => Key::Home,
+            "Tab" => Key::Tab,
+            "Escape" => Key::Escape,
+            c => Key::Layout(c.chars().next().unwrap()),
+        };
+        println!(" key detected: {:?}", k);
+        self.enigo.as_mut().unwrap().key_down(k);
+    }
+    pub fn key_up(&mut self, key: &str) {
+        println!(" key to match: {:?}", key);
+        let k = match key {
+            "Return" => Key::Return,
+            "BackSpace" => Key::Backspace,
+            "Delete" => Key::Delete,
+            "Page_Up" => Key::PageUp,
+            "Page_Down" => Key::PageDown,
+            "Up" => Key::UpArrow,
+            "Down" => Key::DownArrow,
+            "Left" => Key::LeftArrow,
+            "Right" => Key::RightArrow,
+            "End" => Key::End,
+            "Home" => Key::Home,
+            "Tab" => Key::Tab,
+            "Escape" => Key::Escape,
+            c => Key::Layout(c.chars().next().unwrap()),
+        };
+        println!(" key detected: {:?}", k);
+        self.enigo.as_mut().unwrap().key_up(k);
+    }
 }
 
 pub trait Message {

@@ -165,9 +165,14 @@ fn main() -> Result<(), Box<dyn Error>> {
             };
             match message {
                 ClientEvent::KeyEvent {down, key} => {
-                    let name = gdk::keys::Key::from(key).name().unwrap();
+                    let keyname = gdk::keys::Key::from(key).name().unwrap();
                     let action = if down {"pressed"} else {"released"};
-                    println!("key {}: {}, name: {}", action, key, name);
+                    println!("key {}: {}, name: {}", action, key, keyname);
+                    if down {
+                        input.key_down(&keyname);
+                    } else {
+                        input.key_up(&keyname);
+                    }
                 },
                 ClientEvent::PointerEvent { button_mask, x_position, y_position} => {
                     let action = if button_mask > 0 {"pressed"} else {"release"};
