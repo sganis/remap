@@ -94,6 +94,13 @@ fn create_ui() -> AppWindow {
                     let mut bytes = vec![0; nbytes as usize];
                     stream.read_exact(&mut bytes).unwrap();
                     println!("update reply");
+
+                    // render image
+                    image::save_buffer("image.jpg",
+                        &bytes, width as u32, height as u32, image::ColorType::Rgba8).unwrap();
+                    
+
+
                 },
                 _ => {
                     println!("other reply");
