@@ -11,6 +11,7 @@ use xcb::{XidNew};
 use glib::clone;
 use clap::Parser;
 use serde::Deserialize;
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use remap::{Event, EventAction, Input, Geometry, ClientEvent, ServerEvent, Message};
 use remap::util;
 
@@ -144,7 +145,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     loop {
         let (mut stream, source_addr) = listener.accept()?;
         println!("Connected to client {:?}", source_addr);
-    
+        
+        // send geometry
+        stream.write_u16::<BigEndian>(width as u16).unwrap();
+        stream.write_u16::<BigEndian>(height as u16).unwrap();
+        
+        // setup input
         let mut input = Input::new();
         input.set_window(xid);
         let pid = input.get_window_pid();
@@ -156,6 +162,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         loop {
+            println!("Waiting...");
             let message = match ClientEvent::read_from(&mut stream) {
                 Err(error) => {
                     println!("Client disconnected");
