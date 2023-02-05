@@ -6,11 +6,17 @@ use gdk::{prelude::*, gdk_pixbuf};
 use gtk::prelude::*;
 use std::sync::{Mutex};
 use lazy_static::lazy_static;
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use remap::{util, ClientEvent, ServerEvent, Message};
 
+struct App {
+    stream : TcpStream,
+    width: u16,
+    height : u16,
+}
 
 lazy_static! {
-    static ref TCP: Mutex<Vec<TcpStream>> = Mutex::new(Vec::new());
+    static ref APP: Mutex<Vec<App>> = Mutex::new(Vec::new());
 }
 
 struct AppWindow {
@@ -71,7 +77,7 @@ fn create_ui() -> AppWindow {
             e.keyval().to_unicode(), 
             name, modifiers);
 
-        let mut stream = &TCP.lock().unwrap()[0];
+        let mut stream = &APP.lock().unwrap()[0].stream;
         let message = ClientEvent::KeyEvent { down: true, key  };
         message.write_to(&mut stream).unwrap(); 
 
@@ -114,7 +120,7 @@ fn create_ui() -> AppWindow {
     main_window.connect_key_release_event(move |_, e| {
         let key = *e.keyval();
         let message = ClientEvent::KeyEvent { down: false, key  };
-        let mut stream = &TCP.lock().unwrap()[0];
+        let mut stream = &APP.lock().unwrap()[0].stream;
         message.write_to(&mut stream).unwrap(); 
         Inhibit(true)
     });
@@ -135,7 +141,7 @@ fn create_ui() -> AppWindow {
             y_position: e.position().1 as u16, 
         };
         
-        let mut stream = &TCP.lock().unwrap()[0];
+        let mut stream = &APP.lock().unwrap()[0].stream;
         message.write_to(&mut stream).unwrap(); 
         
         Inhibit(true)
@@ -148,7 +154,7 @@ fn create_ui() -> AppWindow {
             x_position: e.position().0 as u16,
             y_position: e.position().1 as u16, 
         };      
-        let mut stream = &TCP.lock().unwrap()[0];
+        let mut stream = &APP.lock().unwrap()[0].stream;
         message.write_to(&mut stream).unwrap(); 
         Inhibit(true)
     });
@@ -166,7 +172,7 @@ fn create_ui() -> AppWindow {
             y_position: e.position().1 as u16, 
         };        
         
-        let mut stream = &TCP.lock().unwrap()[0];
+        let mut stream = &APP.lock().unwrap()[0].stream;
         message.write_to(&mut stream).unwrap(); 
         let message = ClientEvent::PointerEvent { 
             button_mask: 0, 
@@ -196,7 +202,9 @@ fn create_ui() -> AppWindow {
     let vbox = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     vbox.pack_start(&video_window, true, true, 0);
     main_window.add(&vbox);
-    main_window.set_default_size(1684, 874);
+    let width = APP.lock().unwrap()[0].width;
+    let height = APP.lock().unwrap()[0].height;
+    main_window.set_default_size(width as i32, height as i32);
     main_window.show_all();
 
     AppWindow {
@@ -246,13 +254,19 @@ pub fn main() {
     println!("Tunnel Ok.");
     
     //  connection
-    let stream = TcpStream::connect(&format!("127.0.0.1:{port}"))
+    let mut stream = TcpStream::connect(&format!("127.0.0.1:{port}"))
         .expect("Cannot connect to input port");
-    println!("Event connection Ok.");
-    {
-        let mut guard = TCP.lock().unwrap();
-        guard.push(stream);
-    }
+    println!("Connected");
+    let width = stream.read_u16::<BigEndian>().unwrap();
+    let height = stream.read_u16::<BigEndian>().unwrap();
+
+    let app = App {
+        stream,
+        width,
+        height,
+    };
+    APP.lock().unwrap().push(app);
+    
 
     // spwan a thread to read socket
     // std::thread::spawn(move|| {
