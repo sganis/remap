@@ -11,6 +11,7 @@ use remap::{util, ClientEvent, ServerEvent, Message};
 
 struct App {
     stream : TcpStream,
+    video: Vec<u8>,
     width: u16,
     height : u16,
 }
@@ -60,8 +61,20 @@ fn create_ui() -> AppWindow {
     video_window.connect_draw(move |_, context| {
         println!("window redraw called.");
         
-        //context.set_source_pixbuf(&pixbuf, 0, 0);
-        //context.paint();
+        // render image
+        let app = &APP.lock().unwrap()[0];
+        let bytes = &app.video;
+        let width = app.width;
+        let height = app.height;
+
+        if bytes.len() > 0 {
+            image::save_buffer("image.jpg",
+                bytes, width as u32, height as u32, image::ColorType::Rgba8).unwrap();
+            println!("image saved.")
+            //context.set_source_pixbuf(&pixbuf, 0, 0);
+            //context.paint();
+        }
+
         return Inhibit(false);
     });
 
@@ -77,7 +90,8 @@ fn create_ui() -> AppWindow {
             e.keyval().to_unicode(), 
             name, modifiers);
 
-        let mut stream = &APP.lock().unwrap()[0].stream;
+        let mut app = &APP.lock().unwrap()[0];
+        let mut stream = &app.stream;
         let message = ClientEvent::KeyEvent { down: true, key  };
         message.write_to(&mut stream).unwrap(); 
 
@@ -101,9 +115,12 @@ fn create_ui() -> AppWindow {
                     stream.read_exact(&mut bytes).unwrap();
                     println!("update reply");
 
-                    // render image
-                    image::save_buffer("image.jpg",
-                        &bytes, width as u32, height as u32, image::ColorType::Rgba8).unwrap();
+                    // let mut video = app.video;
+
+                    // for i in 0..bytes.len() {
+                    //     app.video[i] = bytes[i];
+                    // }
+                    
                     
 
 
@@ -259,30 +276,19 @@ pub fn main() {
     println!("Connected");
     let width = stream.read_u16::<BigEndian>().unwrap();
     let height = stream.read_u16::<BigEndian>().unwrap();
+    let size = width as usize * height as usize;
 
     let app = App {
         stream,
+        video : Vec::new(),
         width,
         height,
     };
-    APP.lock().unwrap().push(app);
-    
 
-    // spwan a thread to read socket
-    // std::thread::spawn(move|| {
-    //     loop {
-    //         let mut stream = &TCP.lock().unwrap()[0];
-    //         let reply = match ServerEvent::read_from(&mut stream) {
-    //             Err(e) => {
-    //                 println!("Server disconnected: {:?}", e);
-    //                 break;
-    //             },
-    //             Ok(o) => o,            
-    //         };
-    //         println!("Reply from server");
-    //         //stream_tx.send(reply).expect("Could not send signal on channel.");
-    //     }
-    // });
+
+    APP.lock().unwrap().push(app);
+
+    println!("Geometry: {}x{}", width, height);
 
     // Initialize GTK
     if let Err(err) = gtk::init() {
