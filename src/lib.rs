@@ -1,66 +1,21 @@
 pub mod util;
 use std::io::{ErrorKind as IoErrorKind, Read, Write};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-use serde::{Deserialize, Serialize};
-use bitflags::bitflags;
+
 
 #[cfg(unix)]
 use enigo::{Enigo, MouseButton as EnigoMouseButton, MouseControllable, Key, KeyboardControllable};
 
-bitflags! {
-    #[derive(Serialize, Deserialize)]
-    pub struct Modifier: u32 {
-        const SHIFT = 1;
-        const LOCK = 2;
-        const CONTROL = 4;
-        const MOD1 = 8;
-        const MOD2 = 16;
-    }
-}
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub enum EventAction {
-    FramebufferUpdateRequest {
-        incremental: bool,
-        x: u16,
-        y: u16,
-        width: u16,
-        height: u16,
-    },
-    KeyPress {
-        key: String, 
-    },
-    Click { 
-        x: i32, 
-        y: i32,
-        button: u32,
-    },
-    MouseMove { 
-        x: i32, 
-        y: i32,
-    },
-    Resize { 
-        width: i32, 
-        height: i32,
-    },
-    Scroll {
-        value: i32, // negative up, positive down
-    },
-}
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct Event {
-    pub action : EventAction,
-    pub modifiers: u32,
-}
-impl Event {
-    pub fn as_bytes(&mut self) -> Vec<u8> {
-        bincode::serialize(self).unwrap()
-    }
-    pub fn from_bytes(buffer: &[u8]) -> Self {
-        bincode::deserialize(buffer).unwrap()
-    }
+/// A rect where the image should be updated
+#[derive(Debug, Clone, Copy)]
+pub struct Rect {
+    pub x: u16,
+    pub y: u16,
+    pub width: u16,
+    pub height: u16,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Geometry {
     pub width: i32, 
     pub height: i32
