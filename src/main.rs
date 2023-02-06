@@ -363,15 +363,9 @@ pub fn main() -> Result<()> {
     //let host = "ecclap.chaintrust.com";
     let host = "192.168.100.202";
     let port: u16 = 10100;
-    
-    // video overlay does not work with this env var
-    std::env::set_var("GTK_CSD","0");
-    std::env::set_var("GDK_WIN32_LAYERED","0");
-    
+
     // make ssh connection
     let (tx,rx) = std::sync::mpsc::channel();
-    // read/write socket
-    //let (stream_tx,stream_rx) = std::sync::mpsc::channel();
 
     // Spawn ssh tunnel thread
     std::thread::spawn(move|| {
@@ -399,17 +393,17 @@ pub fn main() -> Result<()> {
     //  connection
     let mut stream = TcpStream::connect(&format!("127.0.0.1:{port}"))
         .expect("Cannot connect to input port");
-    let mut stream2 = stream.try_clone()
+    let stream2 = stream.try_clone()
         .expect("Cannot connect to input port");
     println!("Connected");
     let width = stream.read_u16::<BigEndian>().unwrap();
     let height = stream.read_u16::<BigEndian>().unwrap();
-    let size = width as usize * height as usize;
+    //let size = width as usize * height as usize;
 
 
     println!("Geometry: {}x{}", width, height);
 
-    let (server_tx, mut server_rx) = std::sync::mpsc::channel();
+    let (server_tx, server_rx) = std::sync::mpsc::channel();
     let (client_tx, client_rx) = std::sync::mpsc::channel();
 
     std::thread::spawn(move || {        
@@ -424,7 +418,7 @@ pub fn main() -> Result<()> {
                 },
                 Ok(o) => o,
             };    
-            server_tx.send(reply);        
+            server_tx.send(reply).unwrap();        
             // match reply {
             //     ServerEvent::FramebufferUpdate { count, bytes } => {
             //         // let nbytes = width as usize * height as usize * 4 as usize;
@@ -452,8 +446,8 @@ pub fn main() -> Result<()> {
         x_position: 0, y_position: 0, width, height 
     }).unwrap();
    
-    let mut width = width as usize;
-    let mut height = height as usize;
+    let width = width as usize;
+    let height = height as usize;
     let mut buffer: Vec<u32> = vec![0; width * height];
 
     let mut window = Window::new(
