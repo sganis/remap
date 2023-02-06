@@ -8,11 +8,9 @@ use std::rc::Rc;
 use std::{time::Instant};
 use xcb::x::{Window, Drawable, GetImage, ImageFormat, GetGeometry};
 use xcb::{XidNew};
-use glib::clone;
 use clap::Parser;
-use serde::Deserialize;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-use remap::{Event, EventAction, Input, Geometry, ClientEvent, ServerEvent, Message};
+use remap::{Input, Geometry, ClientEvent, ServerEvent, Message};
 use remap::util;
 
 #[derive(Parser)]
@@ -172,13 +170,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             };
             match message {
                 ClientEvent::KeyEvent {down, key} => {
-                    let keyname = gdk::keys::Key::from(key).name().unwrap();
+                    //let keyname = gdk::keys::Key::from(key).name().unwrap();
                     let action = if down {"pressed"} else {"released"};
-                    println!("key {}: {}, name: {}", action, key, keyname);
+                    println!("key {}: {}", action, key);
                     if down {
-                        input.key_down(&keyname);
+                        //input.key_down(&keyname);
                     } else {
-                        input.key_up(&keyname);
+                        //input.key_up(&keyname);
                     }
                 },
                 ClientEvent::PointerEvent { button_mask, x_position, y_position} => {
@@ -186,7 +184,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                     println!("button {}: {}, ({},{})", 
                         action, button_mask, x_position, y_position);
                 },
-                ClientEvent::FramebufferUpdateRequest { incremental, x_position, y_position, width, height } => {
+                ClientEvent::FramebufferUpdateRequest {
+                    incremental, x_position, y_position, width, height } => {
                     println!("Frame update: {x_position} {y_position} {width} {height}");
                     let ximage = conn.wait_for_reply(
                         conn.send_request(&GetImage {
@@ -195,14 +194,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                         })
                     ).unwrap();
                     let mut bytes = Vec::from(ximage.data());
-                    // BGRA to RGBA
-                    for i in (0..bytes.len()).step_by(4) {
-                        let b = bytes[i];
-                        let r = bytes[i + 2];      
-                        bytes[i] = r;
-                        bytes[i + 2] = b;
-                        bytes[i + 3] = 255;
-                    }
+                    // // BGRA to RGBA
+                    // for i in (0..bytes.len()).step_by(4) {
+                    //     let b = bytes[i];
+                    //     let r = bytes[i + 2];      
+                    //     bytes[i] = r;
+                    //     bytes[i + 2] = b;
+                    //     bytes[i + 3] = 255;
+                    // }
                     let message = ServerEvent::FramebufferUpdate {
                         count: 1,
                         bytes,
@@ -228,46 +227,46 @@ fn main() -> Result<(), Box<dyn Error>> {
                 break;
             }
             
-            let event = Event::from_bytes(&buf[..]);
-            //println!("event: {:?}", event);
-            match event {
-                Event { action : EventAction::FramebufferUpdateRequest {
-                    incremental, x, y, width, height,
-                }, modifiers: m } => {
+            // let event = Event::from_bytes(&buf[..]);
+            // //println!("event: {:?}", event);
+            // match event {
+            //     Event { action : EventAction::FramebufferUpdateRequest {
+            //         incremental, x, y, width, height,
+            //     }, modifiers: m } => {
                     
 
-                },
-                Event { action : EventAction::KeyPress {key}, modifiers: m} => {
-                    input.key_press(&key, m);
-                    if key == "Return" {
-                        stream.write(b"OK").unwrap();
+            //     },
+            //     Event { action : EventAction::KeyPress {key}, modifiers: m} => {
+            //         input.key_press(&key, m);
+            //         if key == "Return" {
+            //             stream.write(b"OK").unwrap();
 
 
 
-                    }
-                },
-                Event { action: EventAction::Click {x, y, button} , modifiers: m} => {
-                    input.mouse_click(x, y, button, m);
-                    if button == 1 {
-                        stream.write(b"OK").unwrap();
-                    }
-                },
-                Event { action: EventAction::MouseMove {x, y} , modifiers: m} => {
-                    input.mouse_move(x, y, m);
-                    stream.write(b"OK")?;
-                },
-                Event { action: EventAction::Scroll {value} , modifiers: m} => {
-                    stream.write(b"NA")?;
-                },  
-                Event { action: EventAction::Resize {width,height} , modifiers: _} => {
-                    let geometry = Geometry {width,height};                    
-                    stream.write(b"OK")?;
-                },  
-                _ => {
-                    println!("Client sent nothing");
-                    break
-                }            
-            }
+            //         }
+            //     },
+            //     Event { action: EventAction::Click {x, y, button} , modifiers: m} => {
+            //         input.mouse_click(x, y, button, m);
+            //         if button == 1 {
+            //             stream.write(b"OK").unwrap();
+            //         }
+            //     },
+            //     Event { action: EventAction::MouseMove {x, y} , modifiers: m} => {
+            //         input.mouse_move(x, y, m);
+            //         stream.write(b"OK")?;
+            //     },
+            //     Event { action: EventAction::Scroll {value} , modifiers: m} => {
+            //         stream.write(b"NA")?;
+            //     },  
+            //     Event { action: EventAction::Resize {width,height} , modifiers: _} => {
+            //         let geometry = Geometry {width,height};                    
+            //         stream.write(b"OK")?;
+            //     },  
+            //     _ => {
+            //         println!("Client sent nothing");
+            //         break
+            //     }            
+            // }
         }
     }
     
