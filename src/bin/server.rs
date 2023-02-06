@@ -158,6 +158,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             input.focus();    
         }
 
+        let mut is_working = false;
+        
         loop {
             println!("Waiting...");
             let message = match ClientEvent::read_from(&mut stream) {
@@ -204,14 +206,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                     //     bytes[i + 2] = b;
                     //     bytes[i + 3] = 255;
                     // }
-                    let b = bytes.clone();
+                    //let b = bytes.clone();
                     let message = ServerEvent::FramebufferUpdate {
                         count: 1,
                         bytes,
                     };
                     message.write_to(&mut stream).unwrap();
-                    image::save_buffer("image.jpg",
-                        &b[..], width as u32, height as u32, image::ColorType::Rgba8).unwrap();
+                    //image::save_buffer("image.jpg",
+                    //    &b[..], width as u32, height as u32, image::ColorType::Rgba8).unwrap();
                     //stream.write(&bytes[..]).unwrap();
                 },
                 _ => {
