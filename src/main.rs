@@ -497,7 +497,8 @@ pub fn main() -> Result<()> {
             Key::T => println!("released t!"),
             _ => (),
         });
-
+        // if let Ok(reply) = server_rx.try_recv() {
+        //     match reply {
         match server_rx.recv().unwrap() {
             ServerEvent::FramebufferUpdate { count, bytes } => {
                 let mut s_idx = 0;
@@ -510,9 +511,11 @@ pub fn main() -> Result<()> {
                         d_idx += 1;
                     }
                 }
+                println!("updated");        
             },
             _ => ()
         }
+    
 
         // We unwrap here as we want this code to exit if it fails
         window.update_with_buffer(&buffer, new_size.0, new_size.1).unwrap();
@@ -520,6 +523,7 @@ pub fn main() -> Result<()> {
         client_tx.send(ClientEvent::FramebufferUpdateRequest { 
             incremental:true, x_position: 0, y_position: 0, 
             width: new_size.0 as u16, height: new_size.1 as u16}).unwrap();
+        println!("update request...");
     }
 
 
