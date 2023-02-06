@@ -39,7 +39,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
     let display = cli.display.unwrap_or(100);
     let app = cli.app.unwrap_or(
-        String::from("xterm -fa 'Monospace' -fs 18 -geometry 120x30"));
+        String::from("xterm -fa 'Monospace' -fs 14 -geometry 110x24"));
     let args: Vec<&str> = app.split_whitespace().collect();
     let app = args[0];
     let args = &args[1..];       
@@ -204,12 +204,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                         bytes[i + 3] = 255;
                     }
                     let message = ServerEvent::FramebufferUpdate {
-                        count: 1
+                        count: 1,
+                        bytes,
                     };
                     message.write_to(&mut stream).unwrap();
                     //image::save_buffer("image.jpg",
                     //    &bytes, width as u32, height as u32, image::ColorType::Rgba8).unwrap();
-                    stream.write(&bytes[..]).unwrap();
+                    //stream.write(&bytes[..]).unwrap();
                 },
                 _ => {
                     println!("Unknown message");

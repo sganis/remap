@@ -530,39 +530,12 @@ impl Message for Rectangle {
 }
 
 #[derive(Debug)]
-pub struct Colour {
-    pub red:   u16,
-    pub green: u16,
-    pub blue:  u16
-}
-
-impl Message for Colour {
-    fn read_from<R: Read>(reader: &mut R) -> Result<Colour> {
-        Ok(Colour {
-            red:   reader.read_u16::<BigEndian>()?,
-            green: reader.read_u16::<BigEndian>()?,
-            blue:  reader.read_u16::<BigEndian>()?
-        })
-    }
-
-    fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
-        writer.write_u16::<BigEndian>(self.red)?;
-        writer.write_u16::<BigEndian>(self.green)?;
-        writer.write_u16::<BigEndian>(self.blue)?;
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
 pub enum ServerEvent {
     // core spec
     FramebufferUpdate {
-        count:        u16,
+        count:  u16,
+        bytes:  Vec<u8>,
         /* Vec<Rectangle> has to be read out manually */
-    },
-    SetColourMapEntries {
-        first_colour: u16,
-        colours:      Vec<Colour>
     },
     Bell,
     CutText(String),
@@ -581,19 +554,10 @@ impl Message for ServerEvent {
             0 => {
                 reader.read_exact(&mut [0u8; 1])?;
                 Ok(ServerEvent::FramebufferUpdate {
-                    count: reader.read_u16::<BigEndian>()?
+                    count: reader.read_u16::<BigEndian>()?,
+                    bytes: Vec::<u8>::read_from(reader)?,
                 })
-            },
-            1 => {
-                reader.read_exact(&mut [0u8; 1])?;
-                let first_colour = reader.read_u16::<BigEndian>()?;
-                let count = reader.read_u16::<BigEndian>()?;
-                let mut colours = Vec::new();
-                for _ in 0..count {
-                    colours.push(Colour::read_from(reader)?);
-                }
-                Ok(ServerEvent::SetColourMapEntries { first_colour, colours })
-            },
+            },            
             2 => {
                 Ok(ServerEvent::Bell)
             },
@@ -607,19 +571,12 @@ impl Message for ServerEvent {
 
     fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
         match self {
-            ServerEvent::FramebufferUpdate { count } => {
+            ServerEvent::FramebufferUpdate { count, bytes } => {
                 writer.write_u8(0)?;
                 writer.write_all(&[0u8; 1])?;
                 writer.write_u16::<BigEndian>(*count)?;
-            },
-            ServerEvent::SetColourMapEntries { first_colour, ref colours } => {
-                writer.write_u8(1)?;
-                writer.write_all(&[0u8; 1])?;
-                writer.write_u16::<BigEndian>(*first_colour)?;
-                for colour in colours {
-                    Colour::write_to(colour, writer)?;
-                }
-            },
+                Vec::<u8>::write_to(&bytes, writer)?;
+            },            
             ServerEvent::Bell => {
                 writer.write_u8(2)?;
             },
