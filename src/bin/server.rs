@@ -150,12 +150,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         
         // setup input
         let mut input = Input::new();
-        input.set_window(xid);
-        let pid = input.get_window_pid();
-        println!("window pid: {}", pid);
-        input.set_server_geometry(geometry);
-        
-        if !desktop {    
+        if !desktop {
+            input.set_window(xid);
+            let pid = input.get_window_pid();
+            println!("window pid: {}", pid);
+            input.set_server_geometry(geometry);
             input.focus();    
         }
 
@@ -168,6 +167,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 },
                 Ok(message) => message,
             };
+            println!("message from client: {:?}", message);
+
             match message {
                 ClientEvent::KeyEvent {down, key} => {
                     //let keyname = gdk::keys::Key::from(key).name().unwrap();
@@ -187,6 +188,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 ClientEvent::FramebufferUpdateRequest {
                     incremental, x_position, y_position, width, height } => {
                     println!("Frame update: {x_position} {y_position} {width} {height}");
+                    
                     let ximage = conn.wait_for_reply(
                         conn.send_request(&GetImage {
                             format: ImageFormat::ZPixmap, drawable, 
@@ -202,13 +204,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                     //     bytes[i + 2] = b;
                     //     bytes[i + 3] = 255;
                     // }
+                    let b = bytes.clone();
                     let message = ServerEvent::FramebufferUpdate {
                         count: 1,
                         bytes,
                     };
                     message.write_to(&mut stream).unwrap();
-                    //image::save_buffer("image.jpg",
-                    //    &bytes, width as u32, height as u32, image::ColorType::Rgba8).unwrap();
+                    image::save_buffer("image.jpg",
+                        &b[..], width as u32, height as u32, image::ColorType::Rgba8).unwrap();
                     //stream.write(&bytes[..]).unwrap();
                 },
                 _ => {
