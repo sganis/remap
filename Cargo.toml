@@ -1,7 +1,5 @@
 [package]
 name = "remap"
-about = "Remote App"
-author = "SAG"
 version = "0.1.0"
 edition = "2021"
 

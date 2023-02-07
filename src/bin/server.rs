@@ -120,26 +120,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let listener = TcpListener::bind(&input_addr)?;
     println!("Listening on: {}", input_addr);
 
-    //let mut error = 0;
-
-    // let window = unsafe {Window::new(xid as u32)};
-
-    // let (conn, index) = xcb::Connection::connect(None).unwrap();
-    // let setup = conn.get_setup();
-
-    // let drawable = if desktop {
-    //     let screen = setup.roots().nth(index as usize).unwrap();
-    //     Drawable::Window(screen.root())
-    // } else {
-    //     Drawable::Window(window)
-    // };
-
-    // let reply = conn.wait_for_reply(
-    //     conn.send_request(&GetGeometry { drawable })
-    // ).unwrap();
-    // let (width, height) = (reply.width(), reply.height());
-    // println!("Geometry xcb: {}x{}", width, height);
-
     let mut capture = Capture::new(xid as u32);
     let (width, height) = capture.get_geometry();
 
@@ -194,46 +174,19 @@ fn main() -> Result<(), Box<dyn Error>> {
                     incremental, x_position, y_position, width, height } => {
                     println!("Frame update: {x_position} {y_position} {width} {height}");
                     
-                    // let ximage = conn.wait_for_reply(
-                    //     conn.send_request(&GetImage {
-                    //         format: ImageFormat::ZPixmap, drawable, 
-                    //         x: 0, y: 0, width, height, plane_mask: u32::MAX,
-                    //     })
-                    // ).unwrap();
-                    // let mut bytes = Vec::from(ximage.data());
-                    // // BGRA to RGBA
-                    // for i in (0..bytes.len()).step_by(4) {
-                    //     let b = bytes[i];
-                    //     let r = bytes[i + 2];      
-                    //     bytes[i] = r;
-                    //     bytes[i + 2] = b;
-                    //     bytes[i + 3] = 255;
-                    // }
-                    //let b = bytes.clone();
-                    let bytes = capture.get_image();
                     let message = ServerEvent::FramebufferUpdate {
                         count: 1,
-                        bytes,
+                        bytes: capture.get_image(),
                     };
                     message.write_to(&mut stream).unwrap();
+
                     //image::save_buffer("image.jpg",
-                    //    &b[..], width as u32, height as u32, image::ColorType::Rgba8).unwrap();
-                    //stream.write(&bytes[..]).unwrap();
+                    // &b[..], width as u32, height as u32, image::ColorType::Rgba8).unwrap();
+                    
                 },
                 _ => {
                     println!("Unknown message");
                 }
-            }
-
-            continue;
-
-            let mut buf = vec![0; 32];
-            let n = stream.read(&mut buf)?;
-            // println!("event recieved: {:?}", buf);
-
-            if n == 0 {
-                println!("Client disconnected.");
-                break;
             }
             
             // let event = Event::from_bytes(&buf[..]);

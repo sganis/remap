@@ -46,8 +46,20 @@ impl Capture {
         };
         let request = self.connection.send_request(&cookie);
         let ximage = self.connection.wait_for_reply(request).unwrap();
+
+        // // BGRA to RGBA
+        // let mut bytes = ximage.data();
+        // for i in (0..bytes.len()).step_by(4) {
+        //     let b = bytes[i];
+        //     let r = bytes[i + 2];      
+        //     bytes[i] = r;
+        //     bytes[i + 2] = b;
+        //     bytes[i + 3] = 255;
+        // }
+
         Vec::from(ximage.data())
     }
+    
     pub fn get_geometry(&mut self) -> (u16, u16) {
         (self.width, self.height)
     }
