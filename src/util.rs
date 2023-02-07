@@ -84,3 +84,9 @@ pub fn get_window_geometry(xid: i32, display: u32) -> Geometry {
     let height = h.parse::<i32>().expect("Could not parse height geometry");
     Geometry { width, height }
 }
+
+pub fn vec_equal(va: &[u8], vb: &[u8]) -> bool {
+    va.len() == vb.len() && 
+        va.iter().zip(vb).all(|(a,b)| *a==*b)
+}
+

@@ -120,8 +120,29 @@ fn main() -> Result<(), Box<dyn Error>> {
     let listener = TcpListener::bind(&input_addr)?;
     println!("Listening on: {}", input_addr);
 
+    // capture channel
+    let (capture_img_tx,capture_img_rx) = std::sync::mpsc::channel();
+    let (capture_req_tx,capture_req_rx) = std::sync::mpsc::channel();
     let mut capture = Capture::new(xid as u32);
     let (width, height) = capture.get_geometry();
+        
+    std::thread::spawn(move|| {
+        loop {
+            capture_req_rx.recv().unwrap();
+            let image = capture.get_image();
+            println!("image len: {}", image.len());
+            println!("buffer len: {}", capture.framebuffer.len());
+
+            if !util::vec_equal(&image, &capture.framebuffer) {
+                capture.framebuffer = Vec::from(image.clone());
+                capture_img_tx.send(image);
+                println!("image changed")
+            } else {
+                capture_img_tx.send(Vec::new());
+                println!("image did not changed");
+            }
+        }    
+    });
 
     loop {
         let (mut stream, source_addr) = listener.accept()?;
@@ -141,7 +162,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             input.focus();    
         }
 
-        let mut is_working = false;
+        let mut capture_busy = false;
         
         loop {
             println!("Waiting...");
@@ -172,12 +193,22 @@ fn main() -> Result<(), Box<dyn Error>> {
                 },
                 ClientEvent::FramebufferUpdateRequest {
                     incremental, x_position, y_position, width, height } => {
-                    println!("Frame update: {x_position} {y_position} {width} {height}");
+                    println!("Update req: {x_position} {y_position} {width} {height}");
                     
+                    if !capture_busy {
+                        capture_busy = true;
+                        capture_req_tx.send(true).unwrap();
+                    }
+                    
+                    // check if there is a capture ready
+                    let bytes = match capture_img_rx.try_recv() {
+                        Ok(o) => {capture_busy = false; o},
+                        Err(_) => Vec::new(),
+                    };
                     let message = ServerEvent::FramebufferUpdate {
                         count: 1,
-                        bytes: capture.get_image(),
-                    };
+                        bytes,
+                    };                
                     message.write_to(&mut stream).unwrap();
 
                     //image::save_buffer("image.jpg",
@@ -188,6 +219,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     println!("Unknown message");
                 }
             }
+            
             
             // let event = Event::from_bytes(&buf[..]);
             // //println!("event: {:?}", event);

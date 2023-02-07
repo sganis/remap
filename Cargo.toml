@@ -12,7 +12,6 @@ image = "0.24.5"
 minifb = "0.23.0"
 
 [target.'cfg(windows)'.dependencies]
-# gst-video = { git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", package="gstreamer-video" }
 
 [target.'cfg(unix)'.dependencies]
 enigo = { git = "https://github.com/sganis/enigo" }

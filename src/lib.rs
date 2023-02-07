@@ -265,6 +265,66 @@ impl Message for ClientEvent {
     }
 }
 
+#[derive(Debug)]
+pub enum ServerEvent {
+    // core spec
+    FramebufferUpdate {
+        count:  u16,
+        bytes:  Vec<u8>,
+        /* Vec<Rectangle> has to be read out manually */
+    },
+    Bell,
+    CutText(String),
+    // extensions
+}
+
+impl Message for ServerEvent {
+    fn read_from<R: Read>(reader: &mut R) -> Result<ServerEvent> {
+        let message_type =
+            match reader.read_u8() {
+                Err(ref e) if e.kind() == IoErrorKind::UnexpectedEof =>
+                    return Err(Error::Disconnected),
+                result => result?
+            };
+        match message_type {
+            0 => {
+                reader.read_exact(&mut [0u8; 1])?;
+                Ok(ServerEvent::FramebufferUpdate {
+                    count: reader.read_u16::<BigEndian>()?,
+                    bytes: Vec::<u8>::read_from(reader)?,
+                })
+            },            
+            2 => {
+                Ok(ServerEvent::Bell)
+            },
+            3 => {
+                reader.read_exact(&mut [0u8; 3])?;
+                Ok(ServerEvent::CutText(String::read_from(reader)?))
+            },
+            _ => Err(Error::Unexpected("server to client message type"))
+        }
+    }
+
+    fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
+        match self {
+            ServerEvent::FramebufferUpdate { count, bytes } => {
+                writer.write_u8(0)?;
+                writer.write_all(&[0u8; 1])?;
+                writer.write_u16::<BigEndian>(*count)?;
+                Vec::<u8>::write_to(&bytes, writer)?;
+            },            
+            ServerEvent::Bell => {
+                writer.write_u8(2)?;
+            },
+            ServerEvent::CutText(ref text) => {
+                writer.write_u8(3)?;
+                writer.write_all(&[0u8; 3])?;
+                String::write_to(text, writer)?;
+            }
+        }
+        Ok(())
+    }
+}
 
 
 impl Message for Vec<u8> {
@@ -487,63 +547,3 @@ impl Message for Rectangle {
     }
 }
 
-#[derive(Debug)]
-pub enum ServerEvent {
-    // core spec
-    FramebufferUpdate {
-        count:  u16,
-        bytes:  Vec<u8>,
-        /* Vec<Rectangle> has to be read out manually */
-    },
-    Bell,
-    CutText(String),
-    // extensions
-}
-
-impl Message for ServerEvent {
-    fn read_from<R: Read>(reader: &mut R) -> Result<ServerEvent> {
-        let message_type =
-            match reader.read_u8() {
-                Err(ref e) if e.kind() == IoErrorKind::UnexpectedEof =>
-                    return Err(Error::Disconnected),
-                result => result?
-            };
-        match message_type {
-            0 => {
-                reader.read_exact(&mut [0u8; 1])?;
-                Ok(ServerEvent::FramebufferUpdate {
-                    count: reader.read_u16::<BigEndian>()?,
-                    bytes: Vec::<u8>::read_from(reader)?,
-                })
-            },            
-            2 => {
-                Ok(ServerEvent::Bell)
-            },
-            3 => {
-                reader.read_exact(&mut [0u8; 3])?;
-                Ok(ServerEvent::CutText(String::read_from(reader)?))
-            },
-            _ => Err(Error::Unexpected("server to client message type"))
-        }
-    }
-
-    fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
-        match self {
-            ServerEvent::FramebufferUpdate { count, bytes } => {
-                writer.write_u8(0)?;
-                writer.write_all(&[0u8; 1])?;
-                writer.write_u16::<BigEndian>(*count)?;
-                Vec::<u8>::write_to(&bytes, writer)?;
-            },            
-            ServerEvent::Bell => {
-                writer.write_u8(2)?;
-            },
-            ServerEvent::CutText(ref text) => {
-                writer.write_u8(3)?;
-                writer.write_all(&[0u8; 3])?;
-                String::write_to(text, writer)?;
-            }
-        }
-        Ok(())
-    }
-}

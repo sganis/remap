@@ -5,6 +5,7 @@ use xcb::{Connection, XidNew};
 pub struct Capture {
     connection: Connection,
     drawable: Drawable,
+    pub framebuffer: Vec<u8>,
     width: u16,
     height: u16,
 }
@@ -31,6 +32,7 @@ impl Capture {
         Self {
             connection,
             drawable,
+            framebuffer: Vec::new(),
             width,
             height,
         }
@@ -56,7 +58,7 @@ impl Capture {
         //     bytes[i + 2] = b;
         //     bytes[i + 3] = 255;
         // }
-
+        println!("image captrued");
         Vec::from(ximage.data())
     }
     
