@@ -32,7 +32,7 @@ impl Capture {
         Self {
             connection,
             drawable,
-            framebuffer: Vec::new(),
+            framebuffer: vec![],
             width,
             height,
         }
@@ -64,6 +64,9 @@ impl Capture {
     
     pub fn get_geometry(&mut self) -> (u16, u16) {
         (self.width, self.height)
+    }
+    pub fn clear(&mut self) {
+        self.framebuffer = vec![];
     }
 }
 

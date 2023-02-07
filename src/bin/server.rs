@@ -128,18 +128,20 @@ fn main() -> Result<(), Box<dyn Error>> {
         
     std::thread::spawn(move|| {
         loop {
-            capture_req_rx.recv().unwrap();
+            let initialized: bool = capture_req_rx.recv().unwrap();
             let image = capture.get_image();
-            println!("image len: {}", image.len());
-            println!("buffer len: {}", capture.framebuffer.len());
-
+            //println!("image len: {}", image.len());
+            //println!("buffer len: {}", capture.framebuffer.len());
+            if !initialized {
+                capture.clear();
+            }
             if !util::vec_equal(&image, &capture.framebuffer) {
                 capture.framebuffer = Vec::from(image.clone());
                 capture_img_tx.send(image);
-                println!("image changed")
+                //println!("image changed")
             } else {
                 capture_img_tx.send(Vec::new());
-                println!("image did not changed");
+                //println!("image did not changed");
             }
         }    
     });
@@ -163,9 +165,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         let mut capture_busy = false;
-        
+        let mut initialized = false;
+
         loop {
-            println!("Waiting...");
             let message = match ClientEvent::read_from(&mut stream) {
                 Err(error) => {
                     println!("Client disconnected");
@@ -173,7 +175,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 },
                 Ok(message) => message,
             };
-            println!("message from client: {:?}", message);
+            //println!("message from client: {:?}", message);
 
             match message {
                 ClientEvent::KeyEvent {down, key} => {
@@ -193,11 +195,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                 },
                 ClientEvent::FramebufferUpdateRequest {
                     incremental, x_position, y_position, width, height } => {
-                    println!("Update req: {x_position} {y_position} {width} {height}");
+                    //println!("Update req: {x_position} {y_position} {width} {height}");
                     
                     if !capture_busy {
                         capture_busy = true;
-                        capture_req_tx.send(true).unwrap();
+                        capture_req_tx.send(initialized).unwrap();
+                        initialized = true
                     }
                     
                     // check if there is a capture ready
