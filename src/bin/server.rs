@@ -10,8 +10,8 @@ use xcb::x::{Window, Drawable, GetImage, ImageFormat, GetGeometry};
 use xcb::{XidNew};
 use clap::Parser;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-use remap::{Input, Geometry, ClientEvent, ServerEvent, Message};
-use remap::util;
+use remap::{util, Input, Geometry, ClientEvent, ServerEvent, Message};
+use remap::capture::Capture;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -120,25 +120,28 @@ fn main() -> Result<(), Box<dyn Error>> {
     let listener = TcpListener::bind(&input_addr)?;
     println!("Listening on: {}", input_addr);
 
-    let mut error = 0;
+    //let mut error = 0;
 
-    let window = unsafe {Window::new(xid as u32)};
+    // let window = unsafe {Window::new(xid as u32)};
 
-    let (conn, index) = xcb::Connection::connect(None).unwrap();
-    let setup = conn.get_setup();
+    // let (conn, index) = xcb::Connection::connect(None).unwrap();
+    // let setup = conn.get_setup();
 
-    let drawable = if desktop {
-        let screen = setup.roots().nth(index as usize).unwrap();
-        Drawable::Window(screen.root())
-    } else {
-        Drawable::Window(window)
-    };
+    // let drawable = if desktop {
+    //     let screen = setup.roots().nth(index as usize).unwrap();
+    //     Drawable::Window(screen.root())
+    // } else {
+    //     Drawable::Window(window)
+    // };
 
-    let reply = conn.wait_for_reply(
-        conn.send_request(&GetGeometry { drawable })
-    ).unwrap();
-    let (width, height) = (reply.width(), reply.height());
-    println!("Geometry xcb: {}x{}", width, height);
+    // let reply = conn.wait_for_reply(
+    //     conn.send_request(&GetGeometry { drawable })
+    // ).unwrap();
+    // let (width, height) = (reply.width(), reply.height());
+    // println!("Geometry xcb: {}x{}", width, height);
+
+    let mut capture = Capture::new(xid as u32);
+    let (width, height) = capture.get_geometry();
 
     loop {
         let (mut stream, source_addr) = listener.accept()?;
@@ -191,13 +194,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                     incremental, x_position, y_position, width, height } => {
                     println!("Frame update: {x_position} {y_position} {width} {height}");
                     
-                    let ximage = conn.wait_for_reply(
-                        conn.send_request(&GetImage {
-                            format: ImageFormat::ZPixmap, drawable, 
-                            x: 0, y: 0, width, height, plane_mask: u32::MAX,
-                        })
-                    ).unwrap();
-                    let mut bytes = Vec::from(ximage.data());
+                    // let ximage = conn.wait_for_reply(
+                    //     conn.send_request(&GetImage {
+                    //         format: ImageFormat::ZPixmap, drawable, 
+                    //         x: 0, y: 0, width, height, plane_mask: u32::MAX,
+                    //     })
+                    // ).unwrap();
+                    // let mut bytes = Vec::from(ximage.data());
                     // // BGRA to RGBA
                     // for i in (0..bytes.len()).step_by(4) {
                     //     let b = bytes[i];
@@ -207,6 +210,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     //     bytes[i + 3] = 255;
                     // }
                     //let b = bytes.clone();
+                    let bytes = capture.get_image();
                     let message = ServerEvent::FramebufferUpdate {
                         count: 1,
                         bytes,

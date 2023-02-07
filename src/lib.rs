@@ -1,7 +1,10 @@
 pub mod util;
+
+#[cfg(unix)]
+pub mod capture;
+
 use std::io::{ErrorKind as IoErrorKind, Read, Write};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-
 
 #[cfg(unix)]
 use enigo::{Enigo, MouseButton as EnigoMouseButton, MouseControllable, Key, KeyboardControllable};
