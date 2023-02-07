@@ -56,6 +56,7 @@ pub fn main() -> Result<()> {
         loop {
             let message: ClientEvent = client_rx.recv().unwrap();
             message.write_to(&mut stream).unwrap(); 
+
             let reply = match ServerEvent::read_from(&mut stream) {
                 Err(e) => {
                     println!("Server disconnected: {:?}", e);
