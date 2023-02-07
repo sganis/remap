@@ -58,7 +58,7 @@ impl Capture {
         //     bytes[i + 2] = b;
         //     bytes[i + 3] = 255;
         // }
-        println!("image captrued");
+        //println!("image captrued");
         Vec::from(ximage.data())
     }
     

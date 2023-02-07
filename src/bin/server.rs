@@ -176,6 +176,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 Ok(message) => message,
             };
             //println!("message from client: {:?}", message);
+            
+            let mut bytes = Vec::<u8>::new();
 
             match message {
                 ClientEvent::KeyEvent {down, key} => {
@@ -191,7 +193,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 ClientEvent::PointerEvent { button_mask, x_position, y_position} => {
                     let action = if button_mask > 0 {"pressed"} else {"release"};
                     println!("button {}: {}, ({},{})", 
-                        action, button_mask, x_position, y_position);
+                        action, button_mask, x_position, y_position);   
                 },
                 ClientEvent::FramebufferUpdateRequest {
                     incremental, x_position, y_position, width, height } => {
@@ -204,16 +206,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                     
                     // check if there is a capture ready
-                    let bytes = match capture_img_rx.try_recv() {
+                    bytes = match capture_img_rx.try_recv() {
                         Ok(o) => {capture_busy = false; o},
                         Err(_) => Vec::new(),
                     };
-                    let message = ServerEvent::FramebufferUpdate {
-                        count: 1,
-                        bytes,
-                    };                
-                    message.write_to(&mut stream).unwrap();
-
                     //image::save_buffer("image.jpg",
                     // &b[..], width as u32, height as u32, image::ColorType::Rgba8).unwrap();
                     
@@ -223,47 +219,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
             
-            
-            // let event = Event::from_bytes(&buf[..]);
-            // //println!("event: {:?}", event);
-            // match event {
-            //     Event { action : EventAction::FramebufferUpdateRequest {
-            //         incremental, x, y, width, height,
-            //     }, modifiers: m } => {
-                    
-
-            //     },
-            //     Event { action : EventAction::KeyPress {key}, modifiers: m} => {
-            //         input.key_press(&key, m);
-            //         if key == "Return" {
-            //             stream.write(b"OK").unwrap();
-
-
-
-            //         }
-            //     },
-            //     Event { action: EventAction::Click {x, y, button} , modifiers: m} => {
-            //         input.mouse_click(x, y, button, m);
-            //         if button == 1 {
-            //             stream.write(b"OK").unwrap();
-            //         }
-            //     },
-            //     Event { action: EventAction::MouseMove {x, y} , modifiers: m} => {
-            //         input.mouse_move(x, y, m);
-            //         stream.write(b"OK")?;
-            //     },
-            //     Event { action: EventAction::Scroll {value} , modifiers: m} => {
-            //         stream.write(b"NA")?;
-            //     },  
-            //     Event { action: EventAction::Resize {width,height} , modifiers: _} => {
-            //         let geometry = Geometry {width,height};                    
-            //         stream.write(b"OK")?;
-            //     },  
-            //     _ => {
-            //         println!("Client sent nothing");
-            //         break
-            //     }            
-            // }
+            let message = ServerEvent::FramebufferUpdate {
+                count: 1,
+                bytes,
+            };                
+            message.write_to(&mut stream).unwrap();            
         }
     }
     
