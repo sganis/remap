@@ -1,4 +1,5 @@
 pub mod util;
+pub mod canvas;
 
 #[cfg(unix)]
 pub mod capture;
@@ -147,7 +148,7 @@ pub trait Message {
 #[derive(Debug)]
 pub enum ClientEvent {
     // core spec
-    SetPixelFormat(PixelFormat),
+    //SetPixelFormat(PixelFormat),
     SetEncodings(Vec<Encoding>),
     FramebufferUpdateRequest {
         incremental: bool,
@@ -178,10 +179,10 @@ impl Message for ClientEvent {
                 result => result?
             };
         match message_type {
-            0 => {
-                reader.read_exact(&mut [0u8; 3])?;
-                Ok(ClientEvent::SetPixelFormat(PixelFormat::read_from(reader)?))
-            },
+            // 0 => {
+            //     reader.read_exact(&mut [0u8; 3])?;
+            //     Ok(ClientEvent::SetPixelFormat(PixelFormat::read_from(reader)?))
+            // },
             2 => {
                 reader.read_exact(&mut [0u8; 1])?;
                 let count = reader.read_u16::<BigEndian>()?;
@@ -222,11 +223,11 @@ impl Message for ClientEvent {
     }
     fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
         match self {
-            ClientEvent::SetPixelFormat(ref pixel_format) => {
-                writer.write_u8(0)?;
-                writer.write_all(&[0u8; 3])?;
-                PixelFormat::write_to(pixel_format, writer)?;
-            },
+            // ClientEvent::SetPixelFormat(ref pixel_format) => {
+            //     writer.write_u8(0)?;
+            //     writer.write_all(&[0u8; 3])?;
+            //     PixelFormat::write_to(pixel_format, writer)?;
+            // },
             ClientEvent::SetEncodings(ref encodings) => {
                 writer.write_u8(2)?;
                 writer.write_all(&[0u8; 1])?;
@@ -361,21 +362,6 @@ impl Message for String {
     }
 }
 
-
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PixelFormat {
-    pub bits_per_pixel: u8,
-    pub depth:          u8,
-    pub big_endian:     bool,
-    pub true_colour:    bool,
-    pub red_max:        u16,
-    pub green_max:      u16,
-    pub blue_max:       u16,
-    pub red_shift:      u8,
-    pub green_shift:    u8,
-    pub blue_shift:     u8,
-}
 #[derive(Debug)]
 pub enum Error {
     Io(std::io::Error),
@@ -396,14 +382,6 @@ impl std::fmt::Display for Error {
         }
     }
 }
-// impl std::error::Error for Error {
-//     fn cause(&self) -> Option<&dyn std::error::Error> {
-//         match self {
-//             Error::Io(ref inner) => Some(inner),
-//             _ => None
-//         }
-//     }
-// }
 impl From<std::io::Error> for Error {
     fn from(e: std::io::Error) -> Error { Error::Io(e) }
 }
@@ -415,39 +393,6 @@ impl From<std::sync::mpsc::RecvError> for Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-impl Message for PixelFormat {
-    fn read_from<R: Read>(reader: &mut R) -> Result<PixelFormat> {
-        let pixel_format = PixelFormat {
-            bits_per_pixel: reader.read_u8()?,
-            depth:          reader.read_u8()?,
-            big_endian:     reader.read_u8()? != 0,
-            true_colour:    reader.read_u8()? != 0,
-            red_max:        reader.read_u16::<BigEndian>()?,
-            green_max:      reader.read_u16::<BigEndian>()?,
-            blue_max:       reader.read_u16::<BigEndian>()?,
-            red_shift:      reader.read_u8()?,
-            green_shift:    reader.read_u8()?,
-            blue_shift:     reader.read_u8()?,
-        };
-        reader.read_exact(&mut [0u8; 3])?;
-        Ok(pixel_format)
-    }
-
-    fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
-        writer.write_u8(self.bits_per_pixel)?;
-        writer.write_u8(self.depth)?;
-        writer.write_u8(if self.big_endian { 1 } else { 0 })?;
-        writer.write_u8(if self.true_colour { 1 } else { 0 })?;
-        writer.write_u16::<BigEndian>(self.red_max)?;
-        writer.write_u16::<BigEndian>(self.green_max)?;
-        writer.write_u16::<BigEndian>(self.blue_max)?;
-        writer.write_u8(self.red_shift)?;
-        writer.write_u8(self.green_shift)?;
-        writer.write_u8(self.blue_shift)?;
-        writer.write_all(&[0u8; 3])?;
-        Ok(())
-    }
-}
 
 #[derive(Debug)]
 pub struct CopyRect {
