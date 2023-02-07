@@ -360,8 +360,8 @@ pub fn main() -> Result<()> {
     
     let user = "san";
     //let host = "ecclin.chaintrust.com";
-    //let host = "ecclap.chaintrust.com";
-    let host = "192.168.100.202";
+    let host = "ecclap.chaintrust.com";
+    //let host = "192.168.100.202";
     let port: u16 = 10100;
 
     // make ssh connection
@@ -417,27 +417,10 @@ pub fn main() -> Result<()> {
                     break;
                 },
                 Ok(o) => o,
-            };    
+            };   
             server_tx.send(reply).unwrap();        
-            // match reply {
-            //     ServerEvent::FramebufferUpdate { count, bytes } => {
-            //         // let nbytes = width as usize * height as usize * 4 as usize;
-            //         // let mut bytes = vec![0; nbytes as usize];
-            //         // stream.read_exact(&mut bytes).unwrap();
-            //         println!("update reply");
-            //         server_tx.send(reply);
-            //         println!("there 1");
-            //     },
-            //     e => {
-            //         println!("event: {:?}", e);
-            //         server_tx.send(ServerEvent::Bell);
-            //         println!("there 2");
-            //     }
-            // }
         }
     });
-
-
 
     //let mut canvas = CanvasUtils::new()?;
 
@@ -460,7 +443,8 @@ pub fn main() -> Result<()> {
             ..WindowOptions::default()
         },
     ).unwrap();
-    window.limit_update_rate(Some(std::time::Duration::from_micros(30_000)));
+    
+    window.limit_update_rate(Some(std::time::Duration::from_micros(33_000))); // ~30fps
         
 
     let mut size = (width, height);
@@ -497,23 +481,29 @@ pub fn main() -> Result<()> {
             Key::T => println!("released t!"),
             _ => (),
         });
-        // if let Ok(reply) = server_rx.try_recv() {
-        //     match reply {
-        match server_rx.recv().unwrap() {
-            ServerEvent::FramebufferUpdate { count, bytes } => {
-                let mut s_idx = 0;
-                for y in 0..height {
-                    let mut d_idx = y as usize * width as usize;
-                    for _ in 0..width {
-                        buffer[d_idx] = u32::from_le_bytes(
-                            bytes[s_idx..s_idx + 4].try_into().unwrap()) & 0x00_ff_ff_ff;
-                        s_idx += 4;
-                        d_idx += 1;
-                    }
-                }
-                println!("updated");        
-            },
-            _ => ()
+        if let Ok(reply) = server_rx.try_recv() {
+             match reply {
+                ServerEvent::FramebufferUpdate { count, bytes } => {
+                    if bytes.len() > 0 {
+                        let mut s_idx = 0;
+                        for y in 0..height {
+                            let mut d_idx = y as usize * width as usize;
+                            for _ in 0..width {
+                                buffer[d_idx] = u32::from_le_bytes(
+                                    bytes[s_idx..s_idx + 4].try_into().unwrap()) & 0x00_ff_ff_ff;
+                                s_idx += 4;
+                                d_idx += 1;
+                            }
+                        }
+                        println!("updated");
+                    } else {
+                        println!("not changed");
+                    }        
+                },
+                m => println!("messge from server: {:?}", m)
+            }
+        } else {
+            println!("server busy");
         }
     
 
