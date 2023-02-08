@@ -34,7 +34,7 @@ jobs:
         if: ${{ matrix.in-linux }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y openssh-server
+          sudo apt-get install -y openssh-server libxdo3
           sudo service ssh --full-restart
           sudo adduser support --gecos "First,Last,RoomNumber,WorkPhone,HomePhone" --disabled-password
           echo support:support | sudo chpasswd
