@@ -150,7 +150,7 @@ impl Canvas {
             "Remap", width as usize, height as usize, 
             WindowOptions {
                 resize: true,
-                scale_mode: ScaleMode::UpperLeft,
+                scale_mode: ScaleMode::AspectRatioStretch,
                 ..WindowOptions::default()
             })
             .expect("Unable to create window");
