@@ -23,9 +23,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
-        with:
-          node-version: 18
       - name: Rust setup
         uses: dtolnay/rust-toolchain@stable
       - name: Rust cache
@@ -34,7 +31,7 @@ jobs:
         if: ${{ matrix.in-linux }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y openssh-server libxdo3
+          sudo apt-get install -y openssh-server libxdo3-dev
           sudo service ssh --full-restart
           sudo adduser support --gecos "First,Last,RoomNumber,WorkPhone,HomePhone" --disabled-password
           echo support:support | sudo chpasswd
