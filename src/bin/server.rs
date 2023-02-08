@@ -215,7 +215,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 rectangles,
             };                
             // send
-            message.write_to(&mut stream).unwrap();   
+            message.write_to(&mut stream).unwrap();  
             // for r in &rectangles {
             //     r.write_to(&mut stream).unwrap();
             // }         

@@ -65,7 +65,9 @@ impl Capture {
         // save buffer
         let new_rectangles = util::get_rectangles(&ximage.data(), self.width, self.height);
         
-        if !incremental {
+        if !incremental || self.rectangles.len() == 0 {
+            println!("full image, rectangles send: {}", new_rectangles.len());                         
+            self.rectangles = new_rectangles.clone();
             new_rectangles
         } else {
             // return incremental rectangle
@@ -83,7 +85,9 @@ impl Capture {
                     };            
                     different_rectangles.push(rec);            
                 }
-            }            
+            }   
+            self.rectangles = new_rectangles.clone();
+            println!("diff rectangles send: {}", different_rectangles.len());                      
             different_rectangles
         }
     }
