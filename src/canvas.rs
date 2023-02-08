@@ -1,6 +1,6 @@
 use std::sync::mpsc::{Sender, Receiver};
 use minifb::{Key, MouseButton, MouseMode, ScaleMode, Window, WindowOptions};
-use crate::{Result, Rect, ClientEvent, ServerEvent};
+use crate::{Result, Rec, ClientEvent, ServerEvent};
 
 pub trait KeyEx {
     fn code(&self) -> u32;
@@ -164,15 +164,15 @@ impl Canvas {
     pub fn is_open(&self) -> bool {
         self.window.is_open()
     }
-    pub fn draw(&mut self, rect: Rect, data: Vec<u8>) -> Result<()> {
+    pub fn draw(&mut self, rec: &Rec) -> Result<()> {
         // since we set the PixelFormat as bgra
         // the pixels must be sent in [blue, green, red, alpha] in the network order
         let mut s_idx = 0;
-        for y in rect.y..rect.y + rect.height {
-            let mut d_idx = y as usize * self.width as usize + rect.x as usize;
-            for _ in rect.x..rect.x + rect.width {
+        for y in rec.y..rec.y + rec.height {
+            let mut d_idx = y as usize * self.width as usize + rec.x as usize;
+            for _ in rec.x..rec.x + rec.width {
                 self.buffer[d_idx] =
-                    u32::from_le_bytes(data[s_idx..s_idx + 4].try_into().unwrap()) & 0x00_ff_ff_ff;
+                    u32::from_le_bytes(rec.bytes[s_idx..s_idx + 4].try_into().unwrap()) & 0x00_ff_ff_ff;
                 s_idx += 4;
                 d_idx += 1;
             }
@@ -187,28 +187,28 @@ impl Canvas {
         Ok(())
     }
 
-    pub fn copy(&mut self, dst: Rect, src: Rect) -> Result<()> {
-        let mut tmp = vec![0; src.width as usize * src.height as usize];
-        let mut tmp_idx = 0;
-        for y in 0..src.height as usize {
-            let mut s_idx = (src.y as usize + y) * self.width as usize + src.x as usize;
-            for _ in 0..src.width {
-                tmp[tmp_idx] = self.buffer[s_idx];
-                tmp_idx += 1;
-                s_idx += 1;
-            }
-        }
-        tmp_idx = 0;
-        for y in 0..src.height as usize {
-            let mut d_idx = (dst.y as usize + y) * self.width as usize + dst.x as usize;
-            for _ in 0..src.width {
-                self.buffer[d_idx] = tmp[tmp_idx];
-                tmp_idx += 1;
-                d_idx += 1;
-            }
-        }
-        Ok(())
-    }
+    // pub fn copy(&mut self, dst: Rec, src: Rec) -> Result<()> {
+    //     let mut tmp = vec![0; src.width as usize * src.height as usize];
+    //     let mut tmp_idx = 0;
+    //     for y in 0..src.height as usize {
+    //         let mut s_idx = (src.y as usize + y) * self.width as usize + src.x as usize;
+    //         for _ in 0..src.width {
+    //             tmp[tmp_idx] = self.buffer[s_idx];
+    //             tmp_idx += 1;
+    //             s_idx += 1;
+    //         }
+    //     }
+    //     tmp_idx = 0;
+    //     for y in 0..src.height as usize {
+    //         let mut d_idx = (dst.y as usize + y) * self.width as usize + dst.x as usize;
+    //         for _ in 0..src.width {
+    //             self.buffer[d_idx] = tmp[tmp_idx];
+    //             tmp_idx += 1;
+    //             d_idx += 1;
+    //         }
+    //     }
+    //     Ok(())
+    // }
 
     pub fn close(&self) {}
 
@@ -251,17 +251,14 @@ impl Canvas {
         if let Ok(reply) = self.server_rx.try_recv() {
              match reply {
                 ServerEvent::FramebufferUpdate { count, rectangles } => {
-                    //if bytes.len() > 0 {
-                        let rect = Rect { 
-                            x: 0, y: 0, 
-                            width: self.width as u16, 
-                            height: self.height as u16 
-                        };
-                        //self.draw(rect, bytes)?;                        
+                    if count > 0 {
+                        for rec in rectangles.iter() {
+                            self.draw(rec)?;    
+                        }                    
                         //println!("updated");
                     //} else {
                        // println!("not changed");
-                    //}        
+                    }        
                 },
                 m => println!("messge from server: {:?}", m)
             }

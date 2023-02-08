@@ -10,15 +10,6 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 #[cfg(unix)]
 use enigo::{Enigo, MouseButton as EnigoMouseButton, MouseControllable, Key, KeyboardControllable};
 
-/// A rect where the image should be updated
-#[derive(Debug, Clone, Copy)]
-pub struct Rect {
-    pub x: u16,
-    pub y: u16,
-    pub width: u16,
-    pub height: u16,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Geometry {
     pub width: i32, 
@@ -288,7 +279,11 @@ impl Message for ServerEvent {
             0 => {
                 reader.read_exact(&mut [0u8; 1])?;
                 let count = reader.read_u16::<BigEndian>()?; 
-                let rectangles = Vec::<Rec>::new();
+                let mut rectangles = Vec::<Rec>::new();
+                for _ in 0..count {
+                    let r = Rec::read_from(reader)?;
+                    rectangles.push(r);
+                }
                 Ok(ServerEvent::FramebufferUpdate {
                     count,
                     rectangles,
@@ -324,6 +319,36 @@ impl Message for ServerEvent {
                 String::write_to(text, writer)?;
             }
         }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Rec {
+    x: u16,
+    y: u16,
+    width: u16,
+    height: u16,
+    pub bytes: Vec<u8>,
+}
+
+impl Message for Rec {
+    fn read_from<R: Read>(reader: &mut R) -> Result<Rec> {
+        Ok(Rec {
+            x:          reader.read_u16::<BigEndian>()?,
+            y:          reader.read_u16::<BigEndian>()?,
+            width:      reader.read_u16::<BigEndian>()?,
+            height:     reader.read_u16::<BigEndian>()?,
+            bytes:      Vec::<u8>::read_from(reader)?
+        })
+    }
+
+    fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
+        writer.write_u16::<BigEndian>(self.x)?;
+        writer.write_u16::<BigEndian>(self.y)?;
+        writer.write_u16::<BigEndian>(self.width)?;
+        writer.write_u16::<BigEndian>(self.height)?;
+        Vec::<u8>::write_to(&self.bytes, writer)?;
         Ok(())
     }
 }
@@ -430,35 +455,6 @@ impl Message for Encoding {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Rec {
-    x: u16,
-    y: u16,
-    width: u16,
-    height: u16,
-    bytes: Vec<u8>,
-}
-
-impl Message for Rec {
-    fn read_from<R: Read>(reader: &mut R) -> Result<Rec> {
-        Ok(Rec {
-            x:          reader.read_u16::<BigEndian>()?,
-            y:          reader.read_u16::<BigEndian>()?,
-            width:      reader.read_u16::<BigEndian>()?,
-            height:     reader.read_u16::<BigEndian>()?,
-            bytes:      Vec::<u8>::read_from(reader)?
-        })
-    }
-
-    fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
-        writer.write_u16::<BigEndian>(self.x)?;
-        writer.write_u16::<BigEndian>(self.y)?;
-        writer.write_u16::<BigEndian>(self.width)?;
-        writer.write_u16::<BigEndian>(self.height)?;
-        Vec::<u8>::write_to(&self.bytes, writer)?;
-        Ok(())
-    }
-}
 
 #[derive(Debug)]
 pub enum Error {

@@ -1,5 +1,6 @@
 use std::net::TcpListener;
 use std::process::Command;
+use std::path::Path;
 use crate::{Geometry, Rec};
 
 pub fn port_is_listening(port: u16) -> bool {
@@ -19,7 +20,7 @@ pub fn bits_to_number(bits: &[u8]) -> u8 {
 }
 
 #[cfg(target_os = "windows")]
-fn fix_path<P: AsRef<Path>>(p: P) -> String {
+pub fn fix_path<P: AsRef<Path>>(p: P) -> String {
     const VERBATIM_PREFIX: &str = r#"\\?\"#;
     let p = p.as_ref().display().to_string();
     if p.starts_with(VERBATIM_PREFIX) {
@@ -112,24 +113,25 @@ pub fn get_rectangles(bytes: &[u8], swidth: u16, sheight: u16) -> Vec<Rec> {
     let mut rectangles = Vec::<Rec>::new();
     
     let mut buffer: Vec<u8> = Vec::new();
-    buffer.resize(side as usize * side as usize * 3, 0);
+    buffer.resize(side as usize * side as usize * 4, 0);
 
-    let mut n = 0;
+    //let mut n = 0;
     for y in (0..pheight).step_by(side as usize) {
         for x in (0..pwidth).step_by(side as usize) {
             // println!("x={x},y={y}");
             let mut index = 0;
             for j in 0..side {
-                let mut sindex = ((x as usize + ((y+j) as usize * swidth as usize)) * 3) as usize;
+                let mut sindex = ((x as usize + ((y+j) as usize * swidth as usize)) * 4) as usize;
                 for _ in 0..side {
                     buffer[index] = bytes[sindex];
                     buffer[index+1] = bytes[sindex+1];
                     buffer[index+2] = bytes[sindex+2];
-                    index += 3;
-                    sindex += 3;
+                    buffer[index+3] = 255;
+                    index += 4;
+                    sindex += 4;
                 } 
             }
-            n += 1;
+            //n += 1;
             let rec = Rec {
                 x: x as u16,
                 y: y as u16,
@@ -142,24 +144,25 @@ pub fn get_rectangles(bytes: &[u8], swidth: u16, sheight: u16) -> Vec<Rec> {
             //let name = format!("C:\\Users\\san\\Pictures\\Screenshots\\Result_{n}.png");
             //image::save_buffer(&name, &buffer, side, side, image::ColorType::Rgb8).unwrap();
         }
-        n += 1;
+        //n += 1;
     }
 
     // reminder column
     //println!("rwidth: {rwidth}, rheight: {rheight}");
-    n = xrects+1;
-    buffer.resize(rwidth as usize * side as usize * 3, 0);
+    //n = xrects+1;
+    buffer.resize(rwidth as usize * side as usize * 4, 0);
     for y in (0..pheight).step_by(side as usize) {
         let mut index = 0;
         for j in 0..side {
-            let mut sindex = ((pwidth as usize + ((y+j) as usize* swidth as usize)) * 3) as usize;
+            let mut sindex = ((pwidth as usize + ((y+j) as usize* swidth as usize)) * 4) as usize;
             for _ in 0..rwidth {
                 //println!("sindex={sindex},y={y},index={index}");
                 buffer[index] = bytes[sindex];
                 buffer[index+1] = bytes[sindex+1];
                 buffer[index+2] = bytes[sindex+2];
-                index += 3;
-                sindex += 3;
+                buffer[index+3] = 255;
+                index += 4;
+                sindex += 4;
             } 
         }
         let rec = Rec {
@@ -171,23 +174,24 @@ pub fn get_rectangles(bytes: &[u8], swidth: u16, sheight: u16) -> Vec<Rec> {
         };
         rectangles.push(rec);
         //let name = format!("C:\\Users\\san\\Pictures\\Screenshots\\Result_{n}.png");
-        n += xrects+1;
+        //n += xrects+1;
         //image::save_buffer(&name, &buffer, rwidth, side, image::ColorType::Rgb8).unwrap();
     }
 
     // reminder row
-    n = (xrects+1) * yrects +1;
-    buffer.resize(side as usize * rheight as usize * 3, 0);
+    //n = (xrects+1) * yrects +1;
+    buffer.resize(side as usize * rheight as usize * 4, 0);
     for x in (0..pwidth).step_by(side as usize) {
         let mut index = 0;
         for j in 0..rheight {
-            let mut sindex = ((x as usize+ ((pheight+j) as usize * swidth as usize)) * 3) as usize;
+            let mut sindex = ((x as usize+ ((pheight+j) as usize * swidth as usize)) * 4) as usize;
             for _ in 0..side {
                 buffer[index] = bytes[sindex];
                 buffer[index+1] = bytes[sindex+1];
                 buffer[index+2] = bytes[sindex+2];
-                index += 3;
-                sindex += 3;
+                buffer[index+3] = 255;
+                index += 4;
+                sindex += 4;
             } 
         }
         let rec = Rec {
@@ -199,24 +203,25 @@ pub fn get_rectangles(bytes: &[u8], swidth: u16, sheight: u16) -> Vec<Rec> {
         };
         rectangles.push(rec);
         //let name = format!("C:\\Users\\san\\Pictures\\Screenshots\\Result_{n}.png");
-        n += 1;
+        //n += 1;
         //image::save_buffer(&name, &buffer, side, rheight, image::ColorType::Rgb8).unwrap();
     }
 
     // reminder last corner
-    buffer.resize(rwidth as usize * rheight as usize * 3, 0);
+    buffer.resize(rwidth as usize * rheight as usize * 4, 0);
     let mut index = 0;
     for j in 0..rheight {
-        let mut sindex = ((pwidth as usize+ ((pheight+j) as usize* swidth as usize)) * 3) as usize;
+        let mut sindex = ((pwidth as usize+ ((pheight+j) as usize* swidth as usize)) * 4) as usize;
         for _ in 0..rwidth {
             buffer[index] = bytes[sindex];
             buffer[index+1] = bytes[sindex+1];
             buffer[index+2] = bytes[sindex+2];
-            index += 3;
-            sindex += 3;
-        } 
+            buffer[index+3] = 255;
+            index += 4;
+            sindex += 4;
+    } 
     }
-    n = (xrects+1)*(yrects+1);
+    //n = (xrects+1)*(yrects+1);
     let rec = Rec {
         x: pwidth as u16,
         y: pheight as u16,

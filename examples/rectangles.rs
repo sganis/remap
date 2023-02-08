@@ -1,23 +1,25 @@
-use std::path::Path;
 use image::GenericImageView;
-use util;
+use remap::util;
 
 fn main() {
     let mut dir = std::env::current_exe().unwrap();
     dir.pop();
-    let dir = fix_path(dir);
+    let dir = util::fix_path(dir);
     println!("{}",dir);
     let img1path = format!("{}/../../../examples/Screenshot1.png",dir);
     println!("{}",img1path);
     
     let img1 = image::open(&img1path).unwrap();
     let (width, height) = img1.dimensions();
-    let bytes1 = img1.to_rgb8().into_raw();
+    let bytes1 = img1.to_rgba8().into_raw();
     
     let img2 = image::open(&format!("{}/../../../examples/Screenshot2.png",dir)).unwrap();
-    let bytes2 = img2.to_rgb8().into_raw();
+    let bytes2 = img2.to_rgba8().into_raw();
 
-    println!("img diff: {}", vec_equal(&bytes1, &bytes2));
+    println!("pixels: {}", width*height);
+    println!("bytes : {}", bytes2.len());
+
+    println!("img diff: {}", util::vec_equal(&bytes1, &bytes2));
 
     let rectangles1 = util::get_rectangles(&bytes1, width as u16, height as u16);
     let rectangles2 = util::get_rectangles(&bytes2, width as u16, height as u16);
@@ -31,7 +33,7 @@ fn main() {
     for a in 0..rectangles1.len()-1 {
         let ra = &rectangles1[a];
         let rb = &rectangles2[a];
-        if !vec_equal(&ra.bytes, &rb.bytes) {            
+        if !util::vec_equal(&ra.bytes, &rb.bytes) {            
             different_indeces.push(a);            
         }
     }
