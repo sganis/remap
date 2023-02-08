@@ -250,7 +250,7 @@ impl Canvas {
     pub fn handle_server_events(&mut self) -> Result<()> {
         if let Ok(reply) = self.server_rx.try_recv() {
              match reply {
-                ServerEvent::FramebufferUpdate { count } => {
+                ServerEvent::FramebufferUpdate { count, rectangles } => {
                     //if bytes.len() > 0 {
                         let rect = Rect { 
                             x: 0, y: 0, 

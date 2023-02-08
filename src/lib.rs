@@ -270,7 +270,7 @@ impl Message for ClientEvent {
 pub enum ServerEvent {
     FramebufferUpdate {
         count:  u16,
-        //rectangles:  Vec<Rec>,
+        rectangles:  Vec<Rec>,
     },
     Bell,
     CutText(String),
@@ -287,9 +287,11 @@ impl Message for ServerEvent {
         match message_type {
             0 => {
                 reader.read_exact(&mut [0u8; 1])?;
+                let count = reader.read_u16::<BigEndian>()?; 
+                let rectangles = Vec::<Rec>::new();
                 Ok(ServerEvent::FramebufferUpdate {
-                    count: reader.read_u16::<BigEndian>()?,
-                    //rectangle: Vec::<Rec>::read_from(reader)?,
+                    count,
+                    rectangles,
                 })
             },            
             2 => {
@@ -305,11 +307,13 @@ impl Message for ServerEvent {
 
     fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
         match self {
-            ServerEvent::FramebufferUpdate { count } => {
+            ServerEvent::FramebufferUpdate { count, rectangles } => {
                 writer.write_u8(0)?;
                 writer.write_all(&[0u8; 1])?;
                 writer.write_u16::<BigEndian>(*count)?;
-                //Vec::<Rec>::write_to(&rectangles, writer)?;
+                for r in rectangles.iter() {
+                    Rec::write_to(&r, writer);
+                }
             },            
             ServerEvent::Bell => {
                 writer.write_u8(2)?;
@@ -463,7 +467,6 @@ pub enum Error {
     Server(String),
     Disconnected
 }
-
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::result::Result<(), std::fmt::Error> {
         match self {
@@ -484,6 +487,5 @@ impl From<std::sync::mpsc::RecvError> for Error {
         Error::Unexpected(format!("Channel recv error: {:?}",e)) 
     }
 }
-
 pub type Result<T> = std::result::Result<T, Error>;
 

@@ -212,13 +212,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             
             let message = ServerEvent::FramebufferUpdate {
                 count: rectangles.len() as u16,
-                //rectangles,
+                rectangles,
             };                
             // send
             message.write_to(&mut stream).unwrap();   
-            for r in rectangles.iter() {
-                r.write_to(&mut stream).unwrap();
-            }         
+            // for r in &rectangles {
+            //     r.write_to(&mut stream).unwrap();
+            // }         
         }
     }
     
