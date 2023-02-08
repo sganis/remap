@@ -10,7 +10,7 @@ use xcb::x::{Window, Drawable, GetImage, ImageFormat, GetGeometry};
 use xcb::{XidNew};
 use clap::Parser;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-use remap::{util, Input, Geometry, ClientEvent, ServerEvent, Message};
+use remap::{util, Rec, Input, Geometry, ClientEvent, ServerEvent, Message};
 use remap::capture::Capture;
 
 #[derive(Parser)]
@@ -129,20 +129,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     std::thread::spawn(move|| {
         loop {
             let initialized: bool = capture_req_rx.recv().unwrap();
-            let image = capture.get_image();
-            //println!("image len: {}", image.len());
-            //println!("buffer len: {}", capture.framebuffer.len());
             if !initialized {
                 capture.clear();
             }
-            if !util::vec_equal(&image, &capture.framebuffer) {
-                capture.framebuffer = Vec::from(image.clone());
-                capture_img_tx.send(image);
-                //println!("image changed")
-            } else {
-                capture_img_tx.send(Vec::new());
-                //println!("image did not changed");
-            }
+            let rectangles = capture.get_image(true);
+            capture_img_tx.send(rectangles);
         }    
     });
 
@@ -177,7 +168,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             };
             //println!("message from client: {:?}", message);
             
-            let mut bytes = Vec::<u8>::new();
+            let mut rectangles = Vec::<Rec>::new();
 
             match message {
                 ClientEvent::KeyEvent {down, key} => {
@@ -206,7 +197,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                     
                     // check if there is a capture ready
-                    bytes = match capture_img_rx.try_recv() {
+                    rectangles = match capture_img_rx.try_recv() {
                         Ok(o) => {capture_busy = false; o},
                         Err(_) => Vec::new(),
                     };
@@ -220,10 +211,14 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
             
             let message = ServerEvent::FramebufferUpdate {
-                count: 1,
-                bytes,
+                count: rectangles.len() as u16,
+                //rectangles,
             };                
-            message.write_to(&mut stream).unwrap();            
+            // send
+            message.write_to(&mut stream).unwrap();   
+            for r in rectangles.iter() {
+                r.write_to(&mut stream).unwrap();
+            }         
         }
     }
     

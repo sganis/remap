@@ -268,15 +268,12 @@ impl Message for ClientEvent {
 
 #[derive(Debug)]
 pub enum ServerEvent {
-    // core spec
     FramebufferUpdate {
         count:  u16,
-        bytes:  Vec<u8>,
-        /* Vec<Rectangle> has to be read out manually */
+        //rectangles:  Vec<Rec>,
     },
     Bell,
     CutText(String),
-    // extensions
 }
 
 impl Message for ServerEvent {
@@ -292,7 +289,7 @@ impl Message for ServerEvent {
                 reader.read_exact(&mut [0u8; 1])?;
                 Ok(ServerEvent::FramebufferUpdate {
                     count: reader.read_u16::<BigEndian>()?,
-                    bytes: Vec::<u8>::read_from(reader)?,
+                    //rectangle: Vec::<Rec>::read_from(reader)?,
                 })
             },            
             2 => {
@@ -308,11 +305,11 @@ impl Message for ServerEvent {
 
     fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
         match self {
-            ServerEvent::FramebufferUpdate { count, bytes } => {
+            ServerEvent::FramebufferUpdate { count } => {
                 writer.write_u8(0)?;
                 writer.write_all(&[0u8; 1])?;
                 writer.write_u16::<BigEndian>(*count)?;
-                Vec::<u8>::write_to(&bytes, writer)?;
+                //Vec::<Rec>::write_to(&rectangles, writer)?;
             },            
             ServerEvent::Bell => {
                 writer.write_u8(2)?;
@@ -361,37 +358,6 @@ impl Message for String {
         Ok(())
     }
 }
-
-#[derive(Debug)]
-pub enum Error {
-    Io(std::io::Error),
-    Unexpected(String),
-    Server(String),
-    Disconnected
-}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::result::Result<(), std::fmt::Error> {
-        match self {
-            Error::Io(ref inner) => inner.fmt(f),
-            Error::Unexpected(ref descr) =>
-                write!(f, "unexpected {}", descr),
-            Error::Server(ref descr) =>
-                write!(f, "server error: {}", descr),
-            _ => f.write_str(&self.to_string())
-        }
-    }
-}
-impl From<std::io::Error> for Error {
-    fn from(e: std::io::Error) -> Error { Error::Io(e) }
-}
-impl From<std::sync::mpsc::RecvError> for Error {
-    fn from(e: std::sync::mpsc::RecvError) -> Error { 
-        Error::Unexpected(format!("Channel recv error: {:?}",e)) 
-    }
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
 
 
 #[derive(Debug)]
@@ -460,34 +426,64 @@ impl Message for Encoding {
     }
 }
 
-
-#[derive(Debug)]
-pub struct Rectangle {
-    pub x_position: u16,
-    pub y_position: u16,
-    pub width:      u16,
-    pub height:     u16,
-    pub encoding:   Encoding,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Rec {
+    x: u16,
+    y: u16,
+    width: u16,
+    height: u16,
+    bytes: Vec<u8>,
 }
 
-impl Message for Rectangle {
-    fn read_from<R: Read>(reader: &mut R) -> Result<Rectangle> {
-        Ok(Rectangle {
-            x_position: reader.read_u16::<BigEndian>()?,
-            y_position: reader.read_u16::<BigEndian>()?,
+impl Message for Rec {
+    fn read_from<R: Read>(reader: &mut R) -> Result<Rec> {
+        Ok(Rec {
+            x:          reader.read_u16::<BigEndian>()?,
+            y:          reader.read_u16::<BigEndian>()?,
             width:      reader.read_u16::<BigEndian>()?,
             height:     reader.read_u16::<BigEndian>()?,
-            encoding:   Encoding::read_from(reader)?
+            bytes:      Vec::<u8>::read_from(reader)?
         })
     }
 
     fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
-        writer.write_u16::<BigEndian>(self.x_position)?;
-        writer.write_u16::<BigEndian>(self.y_position)?;
+        writer.write_u16::<BigEndian>(self.x)?;
+        writer.write_u16::<BigEndian>(self.y)?;
         writer.write_u16::<BigEndian>(self.width)?;
         writer.write_u16::<BigEndian>(self.height)?;
-        Encoding::write_to(&self.encoding, writer)?;
+        Vec::<u8>::write_to(&self.bytes, writer)?;
         Ok(())
     }
 }
+
+#[derive(Debug)]
+pub enum Error {
+    Io(std::io::Error),
+    Unexpected(String),
+    Server(String),
+    Disconnected
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::result::Result<(), std::fmt::Error> {
+        match self {
+            Error::Io(ref inner) => inner.fmt(f),
+            Error::Unexpected(ref descr) =>
+                write!(f, "unexpected {}", descr),
+            Error::Server(ref descr) =>
+                write!(f, "server error: {}", descr),
+            _ => f.write_str(&self.to_string())
+        }
+    }
+}
+impl From<std::io::Error> for Error {
+    fn from(e: std::io::Error) -> Error { Error::Io(e) }
+}
+impl From<std::sync::mpsc::RecvError> for Error {
+    fn from(e: std::sync::mpsc::RecvError) -> Error { 
+        Error::Unexpected(format!("Channel recv error: {:?}",e)) 
+    }
+}
+
+pub type Result<T> = std::result::Result<T, Error>;
 

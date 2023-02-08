@@ -1,11 +1,13 @@
 
 use xcb::x::{Window, Drawable, GetImage, ImageFormat, GetGeometry};
 use xcb::{Connection, XidNew};
+use crate::util;
+use crate::{Rec};
 
 pub struct Capture {
     connection: Connection,
     drawable: Drawable,
-    pub framebuffer: Vec<u8>,
+    pub rectangles: Vec<Rec>,
     width: u16,
     height: u16,
 }
@@ -32,13 +34,13 @@ impl Capture {
         Self {
             connection,
             drawable,
-            framebuffer: vec![],
+            rectangles: vec![],
             width,
             height,
         }
     }
 
-    pub fn get_image(&mut self) -> Vec<u8> {
+    pub fn get_image(&mut self, incremental: bool) -> Vec<Rec> {
         let cookie = GetImage {
             format: ImageFormat::ZPixmap, 
             drawable: self.drawable, 
@@ -59,14 +61,41 @@ impl Capture {
         //     bytes[i + 3] = 255;
         // }
         //println!("image captrued");
-        Vec::from(ximage.data())
+
+        // save buffer
+        let new_rectangles = util::get_rectangles(&ximage.data(), self.width, self.height);
+        
+        if !incremental {
+            new_rectangles
+        } else {
+            // return incremental rectangle
+            let mut different_rectangles = vec![];            
+            for a in 0..self.rectangles.len()-1 {
+                let ra = &self.rectangles[a];
+                let rb = &new_rectangles[a];
+                if !util::vec_equal(&ra.bytes, &rb.bytes) {
+                    let rec = Rec {
+                        x: rb.x,
+                        y: rb.y,
+                        width: rb.width,
+                        height: rb.height,
+                        bytes: rb.bytes.clone(),
+                    };            
+                    different_rectangles.push(rec);            
+                }
+            }            
+            different_rectangles
+        }
     }
     
     pub fn get_geometry(&mut self) -> (u16, u16) {
         (self.width, self.height)
     }
     pub fn clear(&mut self) {
-        self.framebuffer = vec![];
+        self.rectangles = vec![];
+    }
+    pub fn get_rectangles(&mut self) {
+        self.rectangles = vec![];
     }
 }
 
