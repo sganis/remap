@@ -154,7 +154,7 @@ impl Canvas {
                 ..WindowOptions::default()
             })
             .expect("Unable to create window");
-        window.limit_update_rate(Some(std::time::Duration::from_micros(100_000)));
+        window.limit_update_rate(Some(std::time::Duration::from_micros(500_000)));
         self.window = window;
         self.width = width;
         self.height = height;
@@ -251,13 +251,11 @@ impl Canvas {
         if let Ok(reply) = self.server_rx.try_recv() {
              match reply {
                 ServerEvent::FramebufferUpdate { count, rectangles } => {
+                    println!("Rectangles recieved: {}", count);
                     if count > 0 {
                         for rec in rectangles.iter() {
                             self.draw(rec)?;    
-                        }                    
-                        //println!("updated");
-                    //} else {
-                       // println!("not changed");
+                        }
                     }        
                 },
                 m => println!("messge from server: {:?}", m)
