@@ -11,6 +11,8 @@ byteorder = "1.4.3"
 image = "0.24.5"
 minifb = "0.23.0"
 dotenv = "0.15.0"
+winit = "0.28.1"
+softbuffer = {git = "https://github.com/rust-windowing/softbuffer" }
 
 [target.'cfg(windows)'.dependencies]
 
