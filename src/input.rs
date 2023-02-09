@@ -1,3 +1,5 @@
+use crate::Geometry;
+
 #[cfg(unix)]
 use enigo::{Enigo, MouseButton as EnigoMouseButton, MouseControllable, 
     Key, KeyboardControllable};

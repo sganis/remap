@@ -1,6 +1,7 @@
 pub mod util;
 pub mod canvas;
 pub mod connector;
+pub mod input;
 
 #[cfg(unix)]
 pub mod capture;
@@ -36,7 +37,7 @@ pub enum ClientEvent {
 }
 
 impl ClientEvent {
-    async fn read<S>(reader: &mut S) -> Result<Self>
+    pub async fn read<S>(reader: &mut S) -> Result<Self>
     where S: AsyncRead + Unpin 
     {
         let message = reader.read_u8().await?;
@@ -66,7 +67,7 @@ impl ClientEvent {
             _ => anyhow::bail!("Unexpected message")
         }
     }
-    async fn write<S>(&self, writer: &mut S) -> Result<()>
+    pub async fn write<S>(&self, writer: &mut S) -> Result<()>
     where S: AsyncWrite + Unpin 
     {
         match self {
@@ -131,7 +132,7 @@ impl ServerEvent {
         }
     }
 
-    async fn write<S>(&self, writer: &mut S) -> Result<()>
+    pub async fn write<S>(&self, writer: &mut S) -> Result<()>
     where S: AsyncWrite + Unpin 
     {
         match self {
@@ -172,7 +173,7 @@ impl Rec {
         Ok(Rec { x,y,width,height,bytes })        
     }
 
-    async fn write<S>(&self, writer: &mut S) -> Result<()>
+    pub async fn write<S>(&self, writer: &mut S) -> Result<()>
     where
         S: AsyncWrite + Unpin,
     {

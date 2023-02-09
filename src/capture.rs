@@ -1,6 +1,10 @@
-
 use xcb::x::{Window, Drawable, GetImage, ImageFormat, GetGeometry};
 use xcb::{Connection, XidNew};
+use anyhow::{Ok, Result};
+use tokio::{
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
+    sync::mpsc::{Receiver, Sender},
+};
 use crate::util;
 use crate::{Rec};
 
@@ -66,7 +70,7 @@ impl Capture {
         let new_rectangles = util::get_rectangles(&ximage.data(), self.width, self.height);
         
         if !incremental || self.rectangles.len() == 0 {
-            println!("full image, rectangles send: {}", new_rectangles.len());                         
+            //println!("full image, rectangles send: {}", new_rectangles.len());                         
             self.rectangles = new_rectangles.clone();
             new_rectangles
         } else {
@@ -87,7 +91,7 @@ impl Capture {
                 }
             }   
             self.rectangles = new_rectangles.clone();
-            println!("diff rectangles send: {}", different_rectangles.len());                      
+            //println!("diff rectangles send: {}", different_rectangles.len());                      
             different_rectangles
         }
     }
@@ -98,8 +102,20 @@ impl Capture {
     pub fn clear(&mut self) {
         self.rectangles = vec![];
     }
-    pub fn get_rectangles(&mut self) {
-        self.rectangles = vec![];
+
+    pub async fn run(&mut self, 
+        capture_tx: Sender<Vec<Rec>>,
+        mut server_rx: Receiver<bool>) -> Result<()> 
+    {       
+        loop {
+            let initialized: bool = server_rx.recv().await.unwrap();
+            if !initialized {
+                self.clear();
+            }
+            let rectangles = self.get_image(true);
+            println!("rects captured: {}", rectangles.len());
+            capture_tx.send(rectangles);
+        }    
     }
 }
 
