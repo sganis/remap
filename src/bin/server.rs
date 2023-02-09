@@ -1,6 +1,7 @@
+#![allow(unused)]
 use std::process::Command;
 use tokio::net::TcpListener;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use anyhow::Result;
 use clap::Parser;
 use remap::{Rec, Geometry, ClientEvent, ServerEvent};
@@ -147,63 +148,58 @@ async fn main() -> Result<()> {
             input.focus();    
         }
 
-        let mut capture_busy = false;
-        let mut initialized = false;
 
         loop {
-            let message = match ClientEvent::read(&mut stream).await {
-                Err(error) => {
-                    println!("Client disconnected");
-                    break;
-                },
-                Ok(message) => message,
-            };
-            println!("message from client: {:?}", message);
-            
-            let mut rectangles = Vec::<Rec>::new();
-
-            match message {
-                ClientEvent::KeyEvent {down, key} => {
-                    //let keyname = gdk::keys::Key::from(key).name().unwrap();
-                    let action = if down {"pressed"} else {"released"};
-                    println!("key {}: {}", action, key);
-                    if down {
-                        //input.key_down(&keyname);
+            tokio::select! {
+                // 2.
+                rectangles = capture_rx.recv() => {                    
+                    if let Some(rectangles) = rectangles {
+                        let count = rectangles.len() as u16;
+                        let message = ServerEvent::FramebufferUpdate { count,rectangles };                
+                        println!("sending message, count: {}", count);
+                        message.write(&mut stream).await?;              
                     } else {
-                        //input.key_up(&keyname);
-                    }
-                },
-                ClientEvent::PointerEvent { button_mask, x, y} => {
-                    let action = if button_mask > 0 {"pressed"} else {"release"};
-                    println!("button {}: {}, ({},{})", 
-                        action, button_mask, x, y);   
-                },
-                ClientEvent::FramebufferUpdateRequest {
-                    incremental, x, y, width, height } => {
-                    //println!("Update req: {x} {y} {width} {height}");
+                        println!("nothing recived: {:?}", rectangles);
                     
-                    if !capture_busy {
-                        capture_busy = true;
-                        server_tx.send(initialized).await?;
-                        initialized = true
                     }
-                    
-                    // check if there is a capture ready
-                    rectangles = match capture_rx.try_recv() {
-                        Ok(o) => {capture_busy = false; o},
-                        Err(_) => Vec::new(),
-                    };
-                    //image::save_buffer("image.jpg",
-                    // &b[..], width as u32, height as u32, image::ColorType::Rgba8).unwrap();                
-                },
-                _ => {
-                    println!("Unknown message");
+                }
+ 
+                // 1.
+                client_msg = ClientEvent::read(&mut stream) => {
+                    let message = client_msg?;
+                    println!("message from client: {:?}", message);
+                
+                    let mut rectangles = Vec::<Rec>::new();
+
+                    match message {
+                        ClientEvent::KeyEvent {down, key} => {
+                            //let keyname = gdk::keys::Key::from(key).name().unwrap();
+                            let action = if down {"pressed"} else {"released"};
+                            println!("key {}: {}", action, key);
+                            if down {
+                                //input.key_down(&keyname);
+                            } else {
+                                //input.key_up(&keyname);
+                            }
+                        },
+                        ClientEvent::PointerEvent { button_mask, x, y} => {
+                            let action = if button_mask > 0 {"pressed"} else {"release"};
+                            println!("button {}: {}, ({},{})", 
+                                action, button_mask, x, y);   
+                        },
+                        ClientEvent::FramebufferUpdateRequest {
+                            incremental, x, y, width, height } => {
+                            //println!("Update req: {x} {y} {width} {height}");
+                            
+                            server_tx.send(incremental).await?;
+                            
+                        },
+                        _ => {
+                            println!("Unknown message");
+                        }
+                    }                    
                 }
             }
-            let count = rectangles.len() as u16;
-            let message = ServerEvent::FramebufferUpdate { count,rectangles };                
-            println!("sending message, count: {}", count);
-            message.write(&mut stream).await?;              
         }
     }
     

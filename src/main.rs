@@ -5,7 +5,7 @@ use std::time::Instant;
 use anyhow::Result;
 use remap::canvas::Canvas;
 use remap::util;
-use remap::connector::Connector;
+use remap::client::Client;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -49,15 +49,15 @@ async fn main() -> Result<()> {
     println!("Geometry: {}x{}", width, height);
 
     let (canvas_tx, canvas_rx) = tokio::sync::mpsc::channel(100);
-    let (connector_tx, connector_rx) = tokio::sync::mpsc::channel(100);
-    let mut connector = Connector::new(stream, width, height);
+    let (client_tx, client_rx) = tokio::sync::mpsc::channel(100);
+    let mut client = Client::new(stream, width, height);
 
     tokio::spawn(async move { 
-        connector.run(connector_tx, canvas_rx).await.unwrap() 
+        client.run(client_tx, canvas_rx).await.unwrap() 
     });
 
 
-    let mut canvas = Canvas::new(canvas_tx, connector_rx)?;
+    let mut canvas = Canvas::new(canvas_tx, client_rx)?;
     canvas.resize(width as u32, height as u32)?;
 
     let mut frames = 0;

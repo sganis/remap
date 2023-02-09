@@ -1,12 +1,11 @@
-use anyhow::{Ok, Result};
+use anyhow::Result;
 use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
+    io::{AsyncRead, AsyncWrite},
     sync::mpsc::{Receiver, Sender},
 };
-use crate::{Rec, ClientEvent, ServerEvent};
+use crate::{ClientEvent, ServerEvent};
 
-
-pub struct Connector<S>
+pub struct Client<S>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
@@ -15,7 +14,7 @@ where
     height: u16,
 }
 
-impl<S> Connector<S>
+impl<S> Client<S>
 where S: AsyncRead + AsyncWrite + Unpin
 {
     pub fn new(stream: S, width: u16, height: u16) -> Self {
@@ -23,7 +22,7 @@ where S: AsyncRead + AsyncWrite + Unpin
     }
 
     pub async fn run(&mut self, 
-        connector_tx: Sender<ServerEvent>,
+        client_tx: Sender<ServerEvent>,
         mut canvas_rx: Receiver<ClientEvent>,
     ) -> Result<()> {        
         let message = ClientEvent::FramebufferUpdateRequest {
@@ -36,7 +35,7 @@ where S: AsyncRead + AsyncWrite + Unpin
             tokio::select! {
                 server_msg = ServerEvent::read(&mut self.stream) => {
                     let message = server_msg?;
-                    connector_tx.send(message).await?
+                    client_tx.send(message).await?
                 }
                 canvas_event = canvas_rx.recv() => {
                     if let Some(canvas_event) = canvas_event {
