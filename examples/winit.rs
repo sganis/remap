@@ -34,7 +34,7 @@ fn main() {
                 // Leave now_keys alone, but copy over all changed keys
                 prv_keys.copy_from_slice(&cur_keys);
             },
-            Event::RedrawRequested(window_id) if window_id == window.id() => {
+            Event::RedrawRequested(window_id) => {
                 let (width, height) = {
                     let size = window.inner_size();
                     (size.width, size.height)
@@ -53,35 +53,37 @@ fn main() {
 
                 surface.set_buffer(&buffer, width as u16, height as u16);
             },
-            Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
+            Event::WindowEvent { 
+                event: WindowEvent::CloseRequested, .. 
+            } => {
                 *control_flow = ControlFlow::Exit;
             },
             Event::WindowEvent {
-                event: WindowEvent::MouseInput { state, button, .. }, .. } => {
+                event: WindowEvent::MouseInput { state, button, .. }, .. 
+            } => {
                 println!("Mouse state: {:?} button: {:?}, pos: {:?}", 
                     state, button, cur_pos);
             },
             Event::WindowEvent {
-                event: WindowEvent::MouseWheel { delta, phase, .. }, .. } => {
+                event: WindowEvent::MouseWheel { delta, phase, .. }, .. 
+            } => {
                 println!("Mouse wheel delta: {:?} phase: {:?}, pos: {:?}", 
                     delta, phase, cur_pos);
             },
            
             Event::WindowEvent {
-                event: WindowEvent::CursorMoved { position, .. }, .. } => {
+                event: WindowEvent::CursorMoved { position, .. 
+                }, .. 
+            } => {
                 cur_pos = ( position.x as u16, position.y as u16 );
                 //println!("Cursor moved position: {:?}", position);
             },
             Event::WindowEvent {
                 event: WindowEvent::KeyboardInput {
                     input:winit::event::KeyboardInput {
-                        virtual_keycode:Some(keycode),
-                        state,
-                        ..
-                    },
-                    ..
-                },
-                ..
+                        virtual_keycode:Some(keycode), state, .. 
+                    }, .. 
+                }, .. 
             } => {
                 match state {
                     winit::event::ElementState::Pressed => {

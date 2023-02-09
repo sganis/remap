@@ -1,12 +1,14 @@
 use std::process::Command;
-use std::net::{TcpStream};
-use byteorder::{BigEndian, ReadBytesExt};
-use remap::{Result, ClientEvent, ServerEvent, Message};
+use tokio::net::TcpStream;
+use tokio::io::AsyncReadExt;
+use std::time::Instant;
+use anyhow::Result;
 use remap::canvas::Canvas;
 use remap::util;
+use remap::connector::Connector;
 
-
-pub fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     
     dotenv::dotenv().expect(".env file missing");
     let user = std::env::var("REMAP_USER").expect("REMAP_USER env var missing");
@@ -40,42 +42,40 @@ pub fn main() -> Result<()> {
     println!("Tunnel Ok.");
     
     //  connection
-    let mut stream = TcpStream::connect(&format!("127.0.0.1:{port}"))?;
-    let stream2 = stream.try_clone()?;
+    let mut stream = TcpStream::connect(&format!("127.0.0.1:{port}")).await?;
     println!("Connected");
-    let width = stream.read_u16::<BigEndian>()?;
-    let height = stream.read_u16::<BigEndian>()?;
+    let width = stream.read_u16().await?;
+    let height = stream.read_u16().await?;
     println!("Geometry: {}x{}", width, height);
 
-    let (server_tx, server_rx) = std::sync::mpsc::channel();
-    let (client_tx, client_rx) = std::sync::mpsc::channel();
+    let (canvas_tx, canvas_rx) = tokio::sync::mpsc::channel(100);
+    let (connector_tx, connector_rx) = tokio::sync::mpsc::channel(100);
+    let mut connector = Connector::new(stream, width, height);
 
-    std::thread::spawn(move || {        
-        let mut stream = stream2;
-        loop {
-            let message: ClientEvent = client_rx.recv().unwrap();
-            message.write_to(&mut stream).unwrap(); 
-
-            let reply = match ServerEvent::read_from(&mut stream) {
-                Err(e) => {
-                    println!("Server disconnected: {:?}", e);
-                    break;
-                },
-                Ok(o) => o,
-            };   
-            server_tx.send(reply).unwrap();        
-        }
+    tokio::spawn(async move { 
+        connector.run(connector_tx, canvas_rx).await.unwrap() 
     });
- 
-    let mut canvas = Canvas::new(client_tx, server_rx)?;
+
+
+    let mut canvas = Canvas::new(canvas_tx, connector_rx)?;
     canvas.resize(width as u32, height as u32)?;
+
+    let mut frames = 0;
+    let mut start = Instant::now();
 
     // loop at update rate
     while canvas.is_open() {
-        canvas.handle_input()?;
-        canvas.handle_server_events()?;
-        canvas.update()?;
-        canvas.request_update()?;
+        canvas.handle_input().await?;
+        canvas.handle_server_events().await?;
+        canvas.update().await?;
+        canvas.request_update().await?;
+
+        frames += 1;
+        if start.elapsed().as_secs() >= 1 {
+            println!("{:.0}", frames as f64 / start.elapsed().as_millis() as f64 * 1000.0);
+            start = Instant::now();
+            frames = 0;
+        }
     }
 
     canvas.close();

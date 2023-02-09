@@ -13,6 +13,8 @@ minifb = "0.23.0"
 dotenv = "0.15.0"
 winit = "0.28.1"
 softbuffer = {git = "https://github.com/rust-windowing/softbuffer" }
+tokio = { version = "1.25.0", features = ["full"] }
+anyhow = "1.0.69"
 
 [target.'cfg(windows)'.dependencies]
 
