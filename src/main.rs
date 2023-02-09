@@ -8,10 +8,9 @@ use remap::util;
 
 pub fn main() -> Result<()> {
     
-    let user = "san";
-    //let host = "ecclin.chaintrust.com";
-    //let host = "ecclap.chaintrust.com";
-    let host = "192.168.100.202";
+    dotenv::dotenv().expect(".env file missing");
+    let user = std::env::var("REMAP_USER").expect("REMAP_USER env var missing");
+    let host = std::env::var("REMAP_HOST").expect("REMAP_HOST env var missing");
     let port: u16 = 10100;
 
     // make ssh connection

@@ -5,3 +5,4 @@ target/
 *.vcxproj.user
 x64/
 *.exe
+.env
