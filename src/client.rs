@@ -37,9 +37,9 @@ where S: AsyncRead + AsyncWrite + Unpin
                     let message = server_msg?;
                     client_tx.send(message).await?
                 }
-                canvas_event = canvas_rx.recv() => {
-                    if let Some(canvas_event) = canvas_event {
-                        canvas_event.write(&mut self.stream).await?;
+                client_msg = canvas_rx.recv() => {
+                    if let Some(client_msg) = client_msg {
+                        client_msg.write(&mut self.stream).await?;
                     }
                 }
             }
