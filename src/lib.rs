@@ -1,6 +1,7 @@
+#![allow(unused)]
 pub mod util;
 pub mod canvas;
-pub mod connector;
+pub mod client;
 
 #[cfg(unix)]
 pub mod capture;
