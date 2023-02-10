@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use anyhow::Result;
 use tokio::{
     io::{AsyncRead, AsyncWrite, ReadHalf, WriteHalf},
@@ -30,6 +31,32 @@ where T: AsyncRead + AsyncWrite + Unpin
             width: self.width, height: self.height,
         };
         message.write(&mut self.stream).await?;
+        
+        // // reader
+        // let mut reader = self.stream.try_clone().expect("could not clone the stream");
+
+        // thread::spawn(move || {
+        //     let mut stout = io::stdout();
+        //     io::copy(&mut stream2, &mut stout).expect("error while reading from the stream");
+        //     loop {
+        //         let server_msg = ServerEvent::read(&mut reader).await.unwrap();
+        //         println!("recieved from server: {:?}", server_msg);
+        //         client_tx.send(server_msg).await.unwrap();      
+        //     }
+
+
+        // });
+        
+        // tokio::spawn(async move { 
+        //     let reader = reader.as_ref();
+        //     loop {
+        //         let server_msg = ServerEvent::read(&mut reader).await.unwrap();
+        //         println!("recieved from server: {:?}", server_msg);
+        //         client_tx.send(server_msg).await.unwrap();      
+        //     }
+
+
+        // });
 
         loop {
             // // // send input events
@@ -51,7 +78,7 @@ where T: AsyncRead + AsyncWrite + Unpin
                     }
                 }
                 server_msg = ServerEvent::read(&mut self.stream) => {
-                    println!("recieved from server: {:?}", server_msg);
+                    //println!("recieved from server: {:?}", server_msg);
                     let message = server_msg?;
                     client_tx.send(message).await?
                 }                
