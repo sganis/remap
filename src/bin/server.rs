@@ -133,7 +133,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 capture.clear();
             }
             let rectangles = capture.get_image(true);
-            capture_img_tx.send(rectangles);
+            capture_img_tx.send(rectangles).unwrap();
         }    
     });
 
