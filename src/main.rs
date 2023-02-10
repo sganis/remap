@@ -1,14 +1,12 @@
 use std::process::Command;
-use tokio::net::TcpStream;
-use tokio::io::AsyncReadExt;
-use std::time::Instant;
-use anyhow::Result;
+use std::net::{TcpStream};
+use byteorder::{BigEndian, ReadBytesExt};
+use remap::{Result, ClientEvent, ServerEvent, Message};
 use remap::canvas::Canvas;
 use remap::util;
-use remap::client::Client;
 
-#[tokio::main]
-async fn main() -> Result<()> {
+
+pub fn main() -> Result<()> {
     
     dotenv::dotenv().expect(".env file missing");
     let user = std::env::var("REMAP_USER").expect("REMAP_USER env var missing");
@@ -46,8 +44,8 @@ async fn main() -> Result<()> {
     let writer = stream.try_clone()?;
     let reader = stream.try_clone()?;
     println!("Connected");
-    let width = stream.read_u16().await?;
-    let height = stream.read_u16().await?;
+    let width = stream.read_u16::<BigEndian>()?;
+    let height = stream.read_u16::<BigEndian>()?;
     println!("Geometry: {}x{}", width, height);
 
     let (client_tx, client_rx) = std::sync::mpsc::channel();
@@ -78,22 +76,12 @@ async fn main() -> Result<()> {
     let mut canvas = Canvas::new(canvas_tx, client_rx)?;
     canvas.resize(width as u32, height as u32)?;
 
-    let mut frames = 0;
-    let mut start = Instant::now();
-
     // loop at update rate
     while canvas.is_open() {
-        canvas.handle_input().await?;
-        canvas.handle_server_events().await?;
-        canvas.update().await?;
-        canvas.request_update().await?;
-
-        frames += 1;
-        if start.elapsed().as_secs() >= 1 {
-            println!("{:.0}", frames as f64 / start.elapsed().as_millis() as f64 * 1000.0);
-            start = Instant::now();
-            frames = 0;
-        }
+        canvas.handle_input()?;
+        canvas.handle_server_events()?;
+        canvas.update()?;
+        canvas.request_update()?;
     }
 
     canvas.close();
