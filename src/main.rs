@@ -42,21 +42,39 @@ async fn main() -> Result<()> {
     println!("Tunnel Ok.");
     
     //  connection
-    let mut stream = TcpStream::connect(&format!("127.0.0.1:{port}")).await?;
+    let mut stream = TcpStream::connect(&format!("127.0.0.1:{port}"))?;
+    let writer = stream.try_clone()?;
+    let reader = stream.try_clone()?;
     println!("Connected");
     let width = stream.read_u16().await?;
     let height = stream.read_u16().await?;
     println!("Geometry: {}x{}", width, height);
 
-    let (canvas_tx, canvas_rx) = tokio::sync::mpsc::channel(100);
-    let (client_tx, client_rx) = tokio::sync::mpsc::channel(100);
-    
-    let mut client = Client::new(stream, width, height);
-    tokio::spawn(async move { 
-        client.run(client_tx, canvas_rx).await.unwrap() 
+    let (client_tx, client_rx) = std::sync::mpsc::channel();
+    let (canvas_tx, canvas_rx) = std::sync::mpsc::channel();
+
+    std::thread::spawn(move || {        
+        let mut writer = writer;
+        loop {
+            let request: ClientEvent = canvas_rx.recv().unwrap();
+            request.write_to(&mut writer).unwrap(); 
+        }
     });
 
-
+    std::thread::spawn(move || {        
+        let mut reader = reader;
+        loop {
+            let reply = match ServerEvent::read_from(&mut reader) {
+                Err(e) => {
+                    println!("Server disconnected: {:?}", e);
+                    break;
+                },
+                Ok(o) => o,
+            };   
+            client_tx.send(reply).unwrap();        
+        }
+    });
+ 
     let mut canvas = Canvas::new(canvas_tx, client_rx)?;
     canvas.resize(width as u32, height as u32)?;
 

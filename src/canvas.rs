@@ -1,7 +1,4 @@
-use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
-    sync::mpsc::{Receiver, Sender},
-};
+use std::sync::mpsc::{Sender, Receiver};
 use minifb::{Key, MouseButton, MouseMode, ScaleMode, Window, WindowOptions};
 use crate::{Result, Rec, ClientEvent, ServerEvent};
 
@@ -126,29 +123,25 @@ impl KeyEx for Key {
     }
 }
 
-pub struct Canvas
-{
+pub struct Canvas {
     window: Window,
     buffer: Vec<u32>,
     width: u32,
     height: u32,
-    canvas_tx: Sender<ClientEvent>,
-    connector_rx: Receiver<ServerEvent>,
+    client_tx: Sender<ClientEvent>,
+    server_rx: Receiver<ServerEvent>,
 }
 
-impl Canvas
-{
-    pub fn new(
-        canvas_tx: Sender<ClientEvent>, 
-        connector_rx: Receiver<ServerEvent>) -> Result<Self> {
+impl Canvas {
+    pub fn new(client_tx: Sender<ClientEvent>, server_rx: Receiver<ServerEvent>) -> Result<Self> {
         Ok(Self {
             window: Window::new("Remap", 800_usize, 600_usize, WindowOptions::default())
                 .expect("Unable to create window"),
             buffer: vec![],
             width: 800,
             height: 600,
-            canvas_tx,
-            connector_rx,
+            client_tx,
+            server_rx,
         })
     }
 
@@ -161,7 +154,7 @@ impl Canvas
                 ..WindowOptions::default()
             })
             .expect("Unable to create window");
-        window.limit_update_rate(Some(std::time::Duration::from_micros(1000_000)));
+        window.limit_update_rate(Some(std::time::Duration::from_micros(100_000)));
         self.window = window;
         self.width = width;
         self.height = height;
@@ -187,7 +180,7 @@ impl Canvas
         Ok(())
     }
 
-    pub async fn update(&mut self) -> Result<()> {
+    pub fn update(&mut self) -> Result<()> {
         self.window
             .update_with_buffer(&self.buffer, self.width as usize, self.height as usize)
             .expect("Unable to update screen buffer");
@@ -219,49 +212,46 @@ impl Canvas
 
     pub fn close(&self) {}
 
-    pub async fn handle_input(&mut self) -> Result<()> {
+    pub fn handle_input(&mut self) -> Result<()> {
         if let Some((x, y)) = self.window.get_mouse_pos(MouseMode::Discard) {            
             if self.window.get_mouse_down(MouseButton::Left) {
                 println!("Mouse down left ({},{})", x,y);
                 let event = ClientEvent::PointerEvent { 
-                    button_mask: 1, x: x as u16, y: y as u16 
-                };
-                self.canvas_tx.send(event).await?; 
+                    button_mask: 1, x_position: x as u16, y_position: y as u16 };
+                self.client_tx.send(event).unwrap(); 
             }
             if self.window.get_mouse_down(MouseButton::Right) {
                 println!("Mouse down right ({},{})", x,y);
                 let event = ClientEvent::PointerEvent { 
-                    button_mask: 1, x: x as u16, y: y as u16 
-                };
-                self.canvas_tx.send(event).await?; 
+                    button_mask: 1, x_position: x as u16, y_position: y as u16 };
+                self.client_tx.send(event).unwrap(); 
             }
             if let Some(scroll) = self.window.get_scroll_wheel() {
                 println!("Scrolling {} - {}", scroll.0, scroll.1);
                 let event = ClientEvent::PointerEvent { 
-                    button_mask: 1, x: x as u16, y: y as u16 
-                };
-                self.canvas_tx.send(event).await?; 
+                    button_mask: 1, x_position: x as u16, y_position: y as u16 };
+                self.client_tx.send(event).unwrap(); 
             }
         }
-        self.window.get_keys_pressed(minifb::KeyRepeat::No).iter().for_each(|key| {
+        self.window.get_keys().iter().for_each(|key| {
             println!("key down: {:?}", key);
             let event = ClientEvent::KeyEvent { down: true, key: key.code() };
-            //self.canvas_tx.send(event).await?;                        
+            self.client_tx.send(event).unwrap();                        
         });
         self.window.get_keys_released().iter().for_each(|key| {
             println!("key up: {:?}", key);
             let event = ClientEvent::KeyEvent { down: false, key: key.code() };
-            //self.canvas_tx.send(event).await?;
+            self.client_tx.send(event).unwrap();
         });
         
         Ok(())
     }
 
-    pub async fn handle_server_events(&mut self) -> Result<()> {
-        if let Ok(reply) = self.connector_rx.try_recv() {
+    pub fn handle_server_events(&mut self) -> Result<()> {
+        if let Ok(reply) = self.server_rx.try_recv() {
              match reply {
                 ServerEvent::FramebufferUpdate { count, rectangles } => {
-                    //println!("Rectangles recieved: {}", count);
+                    println!("Rectangles recieved: {}", count);
                     if count > 0 {
                         for rec in rectangles.iter() {
                             self.draw(rec)?;    
@@ -277,12 +267,12 @@ impl Canvas
         Ok(())
     }
 
-    pub async fn request_update(&mut self) -> Result<()> {
+    pub fn request_update(&mut self) -> Result<()> {
         let event = ClientEvent::FramebufferUpdateRequest { 
-            incremental:true, x: 0, y: 0, 
+            incremental:true, x_position: 0, y_position: 0, 
             width: self.width as u16, height: self.height as u16
         };
-        self.canvas_tx.send(event).await?;
+        self.client_tx.send(event).unwrap();
         //println!("update request...");
         Ok(())
     }

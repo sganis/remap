@@ -1,13 +1,19 @@
 #![allow(unused)]
-use std::process::Command;
-use tokio::net::TcpListener;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use anyhow::Result;
+use std::error::Error;
+use std::io::{Read,Write};
+use std::net::TcpListener;
+use std::process::{Command, Stdio};
+use std::str::FromStr;
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::{time::Instant};
+use xcb::x::{Window, Drawable, GetImage, ImageFormat, GetGeometry};
+use xcb::{XidNew};
 use clap::Parser;
-use remap::{Rec, Geometry, ClientEvent, ServerEvent};
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use remap::{util, Rec, Geometry, ClientEvent, ServerEvent, Message};
 use remap::capture::Capture;
 use remap::input::Input;
-use remap::util;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -29,8 +35,7 @@ struct Cli {
     verbose: u8,
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
     let display = cli.display.unwrap_or(100);
     let app = cli.app.unwrap_or(
@@ -114,29 +119,33 @@ async fn main() -> Result<()> {
         std::process::exit(0);
     }).unwrap();
 
-    let listener = TcpListener::bind(&input_addr).await?;
+    let listener = TcpListener::bind(&input_addr)?;
     println!("Listening on: {}", input_addr);
 
     // capture channel
-    let (capture_tx, mut capture_rx) = tokio::sync::mpsc::channel(100);
-    let (server_tx, server_rx) = tokio::sync::mpsc::channel(100);
-
+    let (capture_img_tx,capture_img_rx) = std::sync::mpsc::channel();
+    let (capture_req_tx,capture_req_rx) = std::sync::mpsc::channel();
     let mut capture = Capture::new(xid as u32);
     let (width, height) = capture.get_geometry();
-       
-
-    tokio::spawn(async move { 
-        capture.run(capture_tx, server_rx).await.unwrap() 
+        
+    std::thread::spawn(move|| {
+        loop {
+            let initialized: bool = capture_req_rx.recv().unwrap();
+            if !initialized {
+                capture.clear();
+            }
+            let rectangles = capture.get_image(true);
+            capture_img_tx.send(rectangles).unwrap();
+        }    
     });
 
-
     loop {
-        let (mut stream, source_addr) = listener.accept().await?;
+        let (mut stream, source_addr) = listener.accept()?;
         println!("Connected to client {:?}", source_addr);
         
         // send geometry
-        stream.write_u16(width as u16).await?;
-        stream.write_u16(height as u16).await?;
+        stream.write_u16::<BigEndian>(width as u16).unwrap();
+        stream.write_u16::<BigEndian>(height as u16).unwrap();
         
         // setup input
         let mut input = Input::new();
@@ -148,33 +157,22 @@ async fn main() -> Result<()> {
             input.focus();    
         }
 
-        loop {
-            println!("server looping...");
-            if let Ok(rectangles) = capture_rx.try_recv() {                  
-                println!("capture recieved ############################");
-                let count = rectangles.len() as u16;
-                let mut i = 0;
-                for r in rectangles.iter() {
-                    i+= 1;
-                    println!("rec {}: {}", i, r);                    
-                }
-                let message = ServerEvent::FramebufferUpdate { count, rectangles };    
-                println!("sending message, count: {}", count);                
-                message.write(&mut stream).await?;     
+        let mut capture_busy = false;
+        let mut initialized = false;
 
-                println!("done sending message, count: {}", count);
-                 
-            } else {
-                println!("no caputure yet");
-            }
+        loop {
+            let message = match ClientEvent::read_from(&mut stream) {
+                Err(error) => {
+                    println!("Client disconnected");
+                    break;
+                },
+                Ok(message) => message,
+            };
+            //println!("message from client: {:?}", message);
             
-            println!("Waiting client message...");
-            let client_msg = ClientEvent::read(&mut stream).await?;
-            println!("message from client: {:?}", client_msg);
-        
             let mut rectangles = Vec::<Rec>::new();
 
-            match client_msg {
+            match message {
                 ClientEvent::KeyEvent {down, key} => {
                     //let keyname = gdk::keys::Key::from(key).name().unwrap();
                     let action = if down {"pressed"} else {"released"};
@@ -185,21 +183,44 @@ async fn main() -> Result<()> {
                         //input.key_up(&keyname);
                     }
                 },
-                ClientEvent::PointerEvent { button_mask, x, y} => {
+                ClientEvent::PointerEvent { button_mask, x_position, y_position} => {
                     let action = if button_mask > 0 {"pressed"} else {"release"};
                     println!("button {}: {}, ({},{})", 
-                        action, button_mask, x, y);   
+                        action, button_mask, x_position, y_position);   
                 },
                 ClientEvent::FramebufferUpdateRequest {
-                    incremental, x, y, width, height } => {
-                    //println!("Update req: {x} {y} {width} {height}");                    
-                    server_tx.send(incremental).await?;
+                    incremental, x_position, y_position, width, height } => {
+                    //println!("Update req: {x_position} {y_position} {width} {height}");
+                    
+                    if !capture_busy {
+                        capture_busy = true;
+                        capture_req_tx.send(initialized).unwrap();
+                        initialized = true
+                    }
+                    
+                    // check if there is a capture ready
+                    rectangles = match capture_img_rx.try_recv() {
+                        Ok(o) => {capture_busy = false; o},
+                        Err(_) => Vec::new(),
+                    };
+                    //image::save_buffer("image.jpg",
+                    // &b[..], width as u32, height as u32, image::ColorType::Rgba8).unwrap();
                     
                 },
                 _ => {
                     println!("Unknown message");
                 }
-            }                    
+            }
+            
+            let message = ServerEvent::FramebufferUpdate {
+                count: rectangles.len() as u16,
+                rectangles,
+            };                
+            // send
+            message.write_to(&mut stream).unwrap();  
+            // for r in &rectangles {
+            //     r.write_to(&mut stream).unwrap();
+            // }         
         }
     }
     

@@ -1,8 +1,6 @@
-use crate::Geometry;
-
 #[cfg(unix)]
-use enigo::{Enigo, MouseButton as EnigoMouseButton, MouseControllable, 
-    Key, KeyboardControllable};
+use enigo::{Enigo, MouseButton as EnigoMouseButton, MouseControllable, Key, KeyboardControllable};
+use crate::Geometry;
 
 #[cfg(unix)]
 pub struct Input {
