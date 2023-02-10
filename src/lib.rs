@@ -139,7 +139,7 @@ impl ServerEvent {
         match self {
             ServerEvent::FramebufferUpdate { count, rectangles } => {
                 writer.write_u8(0).await?;
-                writer.write_all(&[0u8; 1]).await?;
+                //writer.write_all(&[0u8; 1]).await?;
                 writer.write_u16(*count).await?;
                 for r in rectangles.iter() {
                     r.write(writer).await?;
@@ -182,10 +182,16 @@ impl Rec {
         writer.write_u16(self.y).await?;
         writer.write_u16(self.width).await?;
         writer.write_u16(self.height).await?;
-        let length = self.bytes.len() as u32;
-        writer.write_u32(length).await?;
+        writer.write_u32(self.bytes.len() as u32).await?;
         writer.write_all(&self.bytes).await?;
         Ok(())
+    }
+}
+
+impl std::fmt::Display for Rec {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "Rec {{ x: {}, y: {}, width: {}, height: {} }}", 
+            self.x, self.y, self.width,self.height)
     }
 }
 
