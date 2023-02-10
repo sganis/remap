@@ -7,8 +7,6 @@ use std::str::FromStr;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::{time::Instant};
-use xcb::x::{Window, Drawable, GetImage, ImageFormat, GetGeometry};
-use xcb::{XidNew};
 use clap::Parser;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use remap::{util, Rec, Geometry, ClientEvent, ServerEvent, Message};
@@ -123,19 +121,19 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Listening on: {}", input_addr);
 
     // capture channel
-    let (capture_img_tx,capture_img_rx) = std::sync::mpsc::channel();
-    let (capture_req_tx,capture_req_rx) = std::sync::mpsc::channel();
+    let (capture_tx,capture_rx) = std::sync::mpsc::channel();
+    let (server_tx,server_rx) = std::sync::mpsc::channel();
     let mut capture = Capture::new(xid as u32);
     let (width, height) = capture.get_geometry();
         
     std::thread::spawn(move|| {
         loop {
-            let initialized: bool = capture_req_rx.recv().unwrap();
+            let initialized: bool = server_rx.recv().unwrap();
             if !initialized {
                 capture.clear();
             }
             let rectangles = capture.get_image(true);
-            capture_img_tx.send(rectangles).unwrap();
+            capture_tx.send(rectangles).unwrap();
         }    
     });
 
@@ -194,12 +192,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                     
                     if !capture_busy {
                         capture_busy = true;
-                        capture_req_tx.send(initialized).unwrap();
+                        server_tx.send(initialized).unwrap();
                         initialized = true
                     }
                     
                     // check if there is a capture ready
-                    rectangles = match capture_img_rx.try_recv() {
+                    rectangles = match capture_rx.try_recv() {
                         Ok(o) => {capture_busy = false; o},
                         Err(_) => Vec::new(),
                     };
