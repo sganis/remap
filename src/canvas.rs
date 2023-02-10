@@ -161,7 +161,7 @@ impl Canvas
                 ..WindowOptions::default()
             })
             .expect("Unable to create window");
-        window.limit_update_rate(Some(std::time::Duration::from_micros(500_000)));
+        window.limit_update_rate(Some(std::time::Duration::from_micros(100_000)));
         self.window = window;
         self.width = width;
         self.height = height;

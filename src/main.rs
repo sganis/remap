@@ -50,8 +50,8 @@ async fn main() -> Result<()> {
 
     let (canvas_tx, canvas_rx) = tokio::sync::mpsc::channel(100);
     let (client_tx, client_rx) = tokio::sync::mpsc::channel(100);
+    
     let mut client = Client::new(stream, width, height);
-
     tokio::spawn(async move { 
         client.run(client_tx, canvas_rx).await.unwrap() 
     });

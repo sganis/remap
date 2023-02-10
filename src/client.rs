@@ -1,34 +1,29 @@
 use anyhow::Result;
 use tokio::{
-    io::{AsyncRead, AsyncWrite},
-    sync::mpsc::{Receiver, Sender}, net::tcp::ReadHalf,
+    io::{AsyncRead, AsyncWrite, ReadHalf, WriteHalf},
+    sync::mpsc::{Receiver, Sender}, 
+    net::TcpStream,
 };
 use crate::{ClientEvent, ServerEvent};
 
-pub struct Client<S>
-where S: AsyncRead + AsyncWrite + Unpin
+pub struct Client<T>
+where T: AsyncRead + AsyncWrite + Unpin
 {
-    reader: ReadHalf,
-    writer: W,
+    stream: T,
     width: u16,
     height: u16,
 }
 
-impl<S> Client<S>
-where     
-    S: AsyncRead + AsyncWrite + Unpin
+impl<T> Client<T>
+where T: AsyncRead + AsyncWrite + Unpin
 {
-    pub fn new(stream: S, width: u16, height: u16) -> Self {
-
-        let (mut reader, mut writer) = tokio::io::split(&mut stream);
-        Self { reader, writer, width, height }
+    pub fn new(stream: T, width: u16, height: u16) -> Self {
+        Self { stream, width, height }
     }
 
     pub async fn run(&mut self, 
         client_tx: Sender<ServerEvent>,
-        mut canvas_rx: Receiver<ClientEvent>
-    ) -> Result<()> 
-    {        
+        mut canvas_rx: Receiver<ClientEvent>) -> Result<()> {              
         // first request full image (incremental=false)
         let message = ClientEvent::FramebufferUpdateRequest {
             incremental: false, x: 0, y: 0,
@@ -36,28 +31,31 @@ where
         };
         message.write(&mut self.stream).await?;
 
+        loop {
+            // // send input events
+            // while let Ok(client_msg) = canvas_rx.try_recv() {
+            //     //println!("recieved from canvas: {:?}", client_msg);
+            //     client_msg.write(&mut self.stream).await?;                 
+            // }
+            // // get server reply
+            // let server_msg = ServerEvent::read(&mut self.stream).await?;
+            // //println!("recieved from server: {:?}", server_msg);
+            // client_tx.send(server_msg).await?
         
-
-        tokio::spawn(async move {
-            loop {
-                ServerEvent::read(&mut reader).await.unwrap();
-                
+            tokio::select! {
+                server_msg = ServerEvent::read(&mut self.stream) => {
+                    println!("recieved from server: {:?}", server_msg);
+                    let message = server_msg?;
+                    client_tx.send(message).await?
+                }
+                client_msg = canvas_rx.recv() => {
+                    //println!("recieved from canvas: {:?}", client_msg);
+                    if let Some(client_msg) = client_msg {
+                        client_msg.write(&mut self.stream).await?;
+                    }
+                }
             }
-        });
-
-        // loop {
-        //     tokio::select! {
-        //         server_msg = ServerEvent::read(&mut self.stream) => {
-        //             let message = server_msg?;
-        //             client_tx.send(message).await?
-        //         }
-        //         client_msg = canvas_rx.recv() => {
-        //             if let Some(client_msg) = client_msg {
-        //                 client_msg.write(&mut self.stream).await?;
-        //             }
-        //         }
-        //     }
-        // }
+        }
         
         Ok(())
     }

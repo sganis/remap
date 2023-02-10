@@ -115,7 +115,7 @@ impl ServerEvent {
 
         match message_type {
             0 => {
-                reader.read_exact(&mut [0u8; 1]).await?;
+                //reader.read_exact(&mut [0u8; 1]).await?;
                 let count = reader.read_u16().await?; 
                 println!("count: {}", count);
         
