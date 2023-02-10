@@ -41,33 +41,39 @@ pub fn main() -> Result<()> {
     
     //  connection
     let mut stream = TcpStream::connect(&format!("127.0.0.1:{port}"))?;
-    let stream2 = stream.try_clone()?;
+    let writer = stream.try_clone()?;
+    let reader = stream.try_clone()?;
     println!("Connected");
     let width = stream.read_u16::<BigEndian>()?;
     let height = stream.read_u16::<BigEndian>()?;
     println!("Geometry: {}x{}", width, height);
 
-    let (server_tx, server_rx) = std::sync::mpsc::channel();
     let (client_tx, client_rx) = std::sync::mpsc::channel();
+    let (canvas_tx, canvas_rx) = std::sync::mpsc::channel();
 
     std::thread::spawn(move || {        
-        let mut stream = stream2;
+        let mut writer = writer;
         loop {
-            let message: ClientEvent = client_rx.recv().unwrap();
-            message.write_to(&mut stream).unwrap(); 
+            let request: ClientEvent = canvas_rx.recv().unwrap();
+            request.write_to(&mut writer).unwrap(); 
+        }
+    });
 
-            let reply = match ServerEvent::read_from(&mut stream) {
+    std::thread::spawn(move || {        
+        let mut reader = reader;
+        loop {
+            let reply = match ServerEvent::read_from(&mut reader) {
                 Err(e) => {
                     println!("Server disconnected: {:?}", e);
                     break;
                 },
                 Ok(o) => o,
             };   
-            server_tx.send(reply).unwrap();        
+            client_tx.send(reply).unwrap();        
         }
     });
  
-    let mut canvas = Canvas::new(client_tx, server_rx)?;
+    let mut canvas = Canvas::new(canvas_tx, client_rx)?;
     canvas.resize(width as u32, height as u32)?;
 
     // loop at update rate
