@@ -18,7 +18,8 @@ pub struct Geometry {
 }
 
 #[derive(Debug)]
-pub enum ClientEvent {
+pub enum ClientEvent
+{
     FramebufferUpdateRequest {
         incremental: bool,
         x: u16,
@@ -145,6 +146,7 @@ impl ServerEvent {
                 for r in rectangles.iter() {
                     r.write(writer).await?;
                 }
+                writer.flush().await?;
             },            
             _ => anyhow::bail!("cannot write server to client message type")
         }
