@@ -148,58 +148,50 @@ async fn main() -> Result<()> {
             input.focus();    
         }
 
-
         loop {
-            tokio::select! {
-                // 2.
-                rectangles = capture_rx.recv() => {                    
-                    if let Some(rectangles) = rectangles {
-                        let count = rectangles.len() as u16;
-                        let message = ServerEvent::FramebufferUpdate { count,rectangles };                
-                        println!("sending message, count: {}", count);
-                        message.write(&mut stream).await?;              
-                    } else {
-                        println!("nothing recived: {:?}", rectangles);
-                    
-                    }
+            //println!("server looping...");
+            if let Ok(rectangles) = capture_rx.try_recv() {                  
+                //println!("capture recieved ############################");
+                let count = rectangles.len() as u16;
+                println!("sending message, count: {}", count);
+                for r in rectangles.iter() {
+                    println!("{}", r);                    
                 }
- 
-                // 1.
-                client_msg = ClientEvent::read(&mut stream) => {
-                    let message = client_msg?;
-                    println!("message from client: {:?}", message);
+                let message = ServerEvent::FramebufferUpdate { count, rectangles };                
+                message.write(&mut stream).await?;             
+            } 
                 
-                    let mut rectangles = Vec::<Rec>::new();
+            let client_msg = ClientEvent::read(&mut stream).await?;
+            //println!("message from client: {:?}", client_msg);
+        
+            let mut rectangles = Vec::<Rec>::new();
 
-                    match message {
-                        ClientEvent::KeyEvent {down, key} => {
-                            //let keyname = gdk::keys::Key::from(key).name().unwrap();
-                            let action = if down {"pressed"} else {"released"};
-                            println!("key {}: {}", action, key);
-                            if down {
-                                //input.key_down(&keyname);
-                            } else {
-                                //input.key_up(&keyname);
-                            }
-                        },
-                        ClientEvent::PointerEvent { button_mask, x, y} => {
-                            let action = if button_mask > 0 {"pressed"} else {"release"};
-                            println!("button {}: {}, ({},{})", 
-                                action, button_mask, x, y);   
-                        },
-                        ClientEvent::FramebufferUpdateRequest {
-                            incremental, x, y, width, height } => {
-                            //println!("Update req: {x} {y} {width} {height}");
-                            
-                            server_tx.send(incremental).await?;
-                            
-                        },
-                        _ => {
-                            println!("Unknown message");
-                        }
-                    }                    
+            match client_msg {
+                ClientEvent::KeyEvent {down, key} => {
+                    //let keyname = gdk::keys::Key::from(key).name().unwrap();
+                    let action = if down {"pressed"} else {"released"};
+                    println!("key {}: {}", action, key);
+                    if down {
+                        //input.key_down(&keyname);
+                    } else {
+                        //input.key_up(&keyname);
+                    }
+                },
+                ClientEvent::PointerEvent { button_mask, x, y} => {
+                    let action = if button_mask > 0 {"pressed"} else {"release"};
+                    println!("button {}: {}, ({},{})", 
+                        action, button_mask, x, y);   
+                },
+                ClientEvent::FramebufferUpdateRequest {
+                    incremental, x, y, width, height } => {
+                    //println!("Update req: {x} {y} {width} {height}");                    
+                    server_tx.send(incremental).await?;
+                    
+                },
+                _ => {
+                    println!("Unknown message");
                 }
-            }
+            }                    
         }
     }
     

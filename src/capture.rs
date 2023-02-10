@@ -45,6 +45,9 @@ impl Capture {
     }
 
     pub fn get_image(&mut self, incremental: bool) -> Vec<Rec> {
+        if !incremental {
+            self.clear();
+        }
         let cookie = GetImage {
             format: ImageFormat::ZPixmap, 
             drawable: self.drawable, 
@@ -108,13 +111,13 @@ impl Capture {
         mut server_rx: Receiver<bool>) -> Result<()> 
     {       
         loop {
-            let initialized: bool = server_rx.recv().await.unwrap();
-            if !initialized {
-                self.clear();
+            if let Some(incremental) = server_rx.recv().await {
+                let rectangles = self.get_image(incremental);
+                if rectangles.len() > 0 {
+                    println!("rects captured: {}", rectangles.len());
+                    capture_tx.send(rectangles).await?;
+                }
             }
-            let rectangles = self.get_image(true);
-            println!("rects captured: {}", rectangles.len());
-            capture_tx.send(rectangles);
         }    
     }
 }
