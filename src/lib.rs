@@ -120,8 +120,9 @@ impl ServerEvent {
                 println!("count: {}", count);
         
                 let mut rectangles = Vec::<Rec>::new();
-                for _ in 0..count {
+                for i in 0..count {
                     let r = Rec::read(reader).await?;
+                    println!("rec {}: {}", i, r);            
                     rectangles.push(r);
                 }
                 Ok(ServerEvent::FramebufferUpdate {

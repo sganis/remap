@@ -32,28 +32,29 @@ where T: AsyncRead + AsyncWrite + Unpin
         message.write(&mut self.stream).await?;
 
         loop {
-            // // send input events
+            // // // send input events
             // while let Ok(client_msg) = canvas_rx.try_recv() {
-            //     //println!("recieved from canvas: {:?}", client_msg);
+            //     println!("recieved from canvas: {:?}", client_msg);
             //     client_msg.write(&mut self.stream).await?;                 
             // }
+
             // // get server reply
             // let server_msg = ServerEvent::read(&mut self.stream).await?;
-            // //println!("recieved from server: {:?}", server_msg);
+            // println!("recieved from server: {:?}", server_msg);
             // client_tx.send(server_msg).await?
         
             tokio::select! {
-                server_msg = ServerEvent::read(&mut self.stream) => {
-                    println!("recieved from server: {:?}", server_msg);
-                    let message = server_msg?;
-                    client_tx.send(message).await?
-                }
                 client_msg = canvas_rx.recv() => {
-                    //println!("recieved from canvas: {:?}", client_msg);
+                    println!("recieved from canvas: {:?}", client_msg);
                     if let Some(client_msg) = client_msg {
                         client_msg.write(&mut self.stream).await?;
                     }
                 }
+                server_msg = ServerEvent::read(&mut self.stream) => {
+                    println!("recieved from server: {:?}", server_msg);
+                    let message = server_msg?;
+                    client_tx.send(message).await?
+                }                
             }
         }
         
