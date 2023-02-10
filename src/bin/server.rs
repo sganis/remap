@@ -149,20 +149,28 @@ async fn main() -> Result<()> {
         }
 
         loop {
-            //println!("server looping...");
+            println!("server looping...");
             if let Ok(rectangles) = capture_rx.try_recv() {                  
-                //println!("capture recieved ############################");
+                println!("capture recieved ############################");
                 let count = rectangles.len() as u16;
-                println!("sending message, count: {}", count);
+                let mut i = 0;
                 for r in rectangles.iter() {
-                    println!("{}", r);                    
+                    i+= 1;
+                    println!("rec {}: {}", i, r);                    
                 }
-                let message = ServerEvent::FramebufferUpdate { count, rectangles };                
-                message.write(&mut stream).await?;             
-            } 
-                
+                let message = ServerEvent::FramebufferUpdate { count, rectangles };    
+                println!("sending message, count: {}", count);                
+                message.write(&mut stream).await?;     
+
+                println!("done sending message, count: {}", count);
+                 
+            } else {
+                println!("no caputure yet");
+            }
+            
+            println!("Waiting client message...");
             let client_msg = ClientEvent::read(&mut stream).await?;
-            //println!("message from client: {:?}", client_msg);
+            println!("message from client: {:?}", client_msg);
         
             let mut rectangles = Vec::<Rec>::new();
 

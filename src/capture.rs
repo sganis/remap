@@ -116,6 +116,7 @@ impl Capture {
                 if rectangles.len() > 0 {
                     println!("rects captured: {}", rectangles.len());
                     capture_tx.send(rectangles).await?;
+                    println!("rects captured sent");
                 }
             }
         }    
