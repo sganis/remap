@@ -125,7 +125,7 @@ fn main() -> Result<()> {
         // channels
         let (capture_tx, capture_rx) = flume::unbounded();
         let (writer_tx, writer_rx) = flume::unbounded();
-        let (input_tx, input_rx) = flume::unbounded();
+        // let (input_tx, input_rx) = flume::unbounded();
               
         // capture thread
         let mut capture = Capture::new(xid as u32);
@@ -177,31 +177,31 @@ fn main() -> Result<()> {
             input.focus();    
         }
 
-        // input thread
-        std::thread::spawn(move || {
-            loop {
-                let message: ClientEvent = match input_rx.recv() {
-                    Err(e) => break,
-                    Ok(o) => o,
-                };
-                match message {
-                    ClientEvent::KeyEvent {down, key} => {
-                        //let action = if down {"pressed"} else {"released"};
-                        //println!("key {}: {}", action, key);
-                        if down {
-                            input.key_down(key);
-                        } else {
-                            input.key_up(key);
-                        }
-                    },
-                    ClientEvent::PointerEvent { buttons, x, y} => {
-                        let action = if buttons > 0 {"pressed"} else {"release"};
-                        println!("button {}: {}, ({},{})", action, buttons, x, y);   
-                    },
-                    _ => ()   
-                }                
-            }    
-        });
+        // // input thread
+        // std::thread::spawn(move || {
+        //     loop {
+        //         let message: ClientEvent = match input_rx.recv() {
+        //             Err(e) => break,
+        //             Ok(o) => o,
+        //         };
+        //         match message {
+        //             ClientEvent::KeyEvent {down, key} => {
+        //                 //let action = if down {"pressed"} else {"released"};
+        //                 //println!("key {}: {}", action, key);
+        //                 if down {
+        //                     input.key_down(key);
+        //                 } else {
+        //                     input.key_up(key);
+        //                 }
+        //             },
+        //             ClientEvent::PointerEvent { buttons, x, y} => {
+        //                 let action = if buttons > 0 {"pressed"} else {"release"};
+        //                 println!("button {}: {}, ({},{})", action, buttons, x, y);   
+        //             },
+        //             _ => ()   
+        //         }                
+        //     }    
+        // });
         
         loop {
             let message = match ClientEvent::read_from(&mut stream) {
@@ -209,12 +209,19 @@ fn main() -> Result<()> {
                 Ok(message) => message,
             };
             match message {
-                ClientEvent::KeyEvent {..} |
-                ClientEvent::PointerEvent {..} => {                    
-                    if input_tx.send(message).is_err() { 
-                        break; 
-                    }    
+                ClientEvent::KeyEvent {down, key} => {
+                    let action = if down {"pressed"} else {"released"};
+                    println!("key {}: {}", action, key);
+                    if down {
+                        input.key_down(key);
+                    } else {
+                        input.key_up(key);
+                    }
                 },
+                ClientEvent::PointerEvent { buttons, x, y} => {
+                    let action = if buttons > 0 {"pressed"} else {"release"};
+                    println!("button {}: {}, ({},{})", action, buttons, x, y);   
+                },                 
                 ClientEvent::FramebufferUpdateRequest {incremental, .. } => {
                     if capture_tx.send(incremental).is_err() {
                         break; 
