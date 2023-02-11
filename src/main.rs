@@ -63,8 +63,8 @@ pub fn main() -> Result<()> {
         let mut reader = reader;
         loop {
             let reply = match ServerEvent::read_from(&mut reader) {
-                Err(e) => {
-                    println!("Server disconnected: {:?}", e);
+                Err(_) => {
+                    println!("Server disconnected");
                     break;
                 },
                 Ok(o) => o,

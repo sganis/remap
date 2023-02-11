@@ -36,7 +36,7 @@ pub enum ClientEvent {
     },
     KeyEvent {
         down:        bool,
-        key:         u32,
+        key:         u8,
     },
     PointerEvent {
         button_mask: u8,
