@@ -1,4 +1,4 @@
-use std::sync::mpsc::{Sender, Receiver};
+use flume::{Sender, Receiver};
 use anyhow::Result;
 use minifb::{Key, MouseButton, MouseMode, ScaleMode, Window, WindowOptions};
 use crate::{Rec, ClientEvent, ServerEvent};
@@ -13,13 +13,13 @@ pub struct Canvas {
     buttons: u8,
 }
 
-enum Pointer {
-    Left = 0x01,
-    Middle = 0x02,
-    Right = 0x04,
-    WheelUp = 0x08,
-    WheelDown = 0x16, 
-}
+// enum Pointer {
+//     Left = 0x01,
+//     Middle = 0x02,
+//     Right = 0x04,
+//     WheelUp = 0x08,
+//     WheelDown = 0x16, 
+// }
 
 impl Canvas {
     pub fn new(client_tx: Sender<ClientEvent>, server_rx: Receiver<ServerEvent>) -> Result<Self> {
@@ -117,6 +117,9 @@ impl Canvas {
                 if self.buttons & 0x01 == 0x01 {
                     println!("Mouse left up ({},{})", x,y);
                     self.buttons &= !0x01;
+                    let event = ClientEvent::PointerEvent { 
+                        buttons: self.buttons, x: x as u16, y: y as u16 };                
+                    self.client_tx.send(event).unwrap(); 
                 }
             }
             if self.window.get_mouse_down(MouseButton::Middle) {
@@ -131,6 +134,10 @@ impl Canvas {
                 if self.buttons & 0x02 == 0x02 {
                     println!("Mouse middle up ({},{})", x,y);
                     self.buttons &= !0x02;
+                    println!("buttons: {}", self.buttons);
+                    let event = ClientEvent::PointerEvent { 
+                        buttons: self.buttons, x: x as u16, y: y as u16 };                
+                    self.client_tx.send(event).unwrap(); 
                 }
             }
             if self.window.get_mouse_down(MouseButton::Right) {
@@ -145,6 +152,9 @@ impl Canvas {
                 if self.buttons & 0x04 == 0x04 {
                     println!("Mouse right up ({},{})", x,y);
                     self.buttons &= !0x04;
+                    let event = ClientEvent::PointerEvent { 
+                        buttons: self.buttons, x: x as u16, y: y as u16 };                
+                    self.client_tx.send(event).unwrap(); 
                 }
             }
             if let Some(scroll) = self.window.get_scroll_wheel() {

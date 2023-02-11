@@ -49,8 +49,8 @@ pub fn main() -> Result<()> {
     let height = stream.read_u16::<BigEndian>()?;
     println!("Geometry: {}x{}", width, height);
 
-    let (client_tx, client_rx) = std::sync::mpsc::channel();
-    let (canvas_tx, canvas_rx) = std::sync::mpsc::channel();
+    let (client_tx, client_rx) = flume::unbounded();
+    let (canvas_tx, canvas_rx) = flume::unbounded();
 
     std::thread::spawn(move || {        
         let mut writer = writer;
