@@ -1,7 +1,8 @@
 use std::process::Command;
 use std::net::{TcpStream};
 use byteorder::{BigEndian, ReadBytesExt};
-use remap::{Result, ClientEvent, ServerEvent, Message};
+use anyhow::Result;
+use remap::{ClientEvent, ServerEvent, Message};
 use remap::canvas::Canvas;
 use remap::util;
 
@@ -55,7 +56,9 @@ pub fn main() -> Result<()> {
         let mut writer = writer;
         loop {
             let request: ClientEvent = canvas_rx.recv().unwrap();
-            request.write_to(&mut writer).unwrap(); 
+            if request.write_to(&mut writer).is_err() {
+                break;
+            } 
         }
     });
 

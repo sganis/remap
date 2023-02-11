@@ -7,7 +7,8 @@ pub mod capture;
 #[cfg(unix)]
 pub mod input;
 
-use std::io::{ErrorKind as IoErrorKind, Read, Write};
+use std::io::{Read, Write};
+use anyhow::Result;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -51,15 +52,10 @@ impl Message for ClientEvent {
     fn read_from<R: Read>(reader: &mut R) -> Result<ClientEvent> {
         let message_type =
             match reader.read_u8() {
-                Err(ref e) if e.kind() == IoErrorKind::UnexpectedEof =>
-                    return Err(Error::Disconnected),
+                Err(_)  => return anyhow::bail!("Disconnected"),
                 result => result?
             };
         match message_type {
-            // 0 => {
-            //     reader.read_exact(&mut [0u8; 3])?;
-            //     Ok(ClientEvent::SetPixelFormat(PixelFormat::read_from(reader)?))
-            // },
             2 => {
                 reader.read_exact(&mut [0u8; 1])?;
                 let count = reader.read_u16::<BigEndian>()?;
@@ -95,7 +91,7 @@ impl Message for ClientEvent {
                 reader.read_exact(&mut [0u8; 3])?;
                 Ok(ClientEvent::CutText(String::read_from(reader)?))
             },
-            _ => Err(Error::Unexpected("client to server message type".to_string()))
+            _ => anyhow::bail!("client to server message type")
         }
     }
     fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
@@ -157,8 +153,7 @@ impl Message for ServerEvent {
     fn read_from<R: Read>(reader: &mut R) -> Result<ServerEvent> {
         let message_type =
             match reader.read_u8() {
-                Err(ref e) if e.kind() == IoErrorKind::UnexpectedEof =>
-                    return Err(Error::Disconnected),
+                Err(_) => return anyhow::bail!("Disconnected"),
                 result => result?
             };
         match message_type {
@@ -182,7 +177,7 @@ impl Message for ServerEvent {
                 reader.read_exact(&mut [0u8; 3])?;
                 Ok(ServerEvent::CutText(String::read_from(reader)?))
             },
-            _ => Err(Error::Unexpected("server to client message type".to_string()))
+            _ => anyhow::bail!("server to client message type")
         }
     }
 
@@ -340,34 +335,4 @@ impl Message for Encoding {
         Ok(())
     }
 }
-
-
-#[derive(Debug)]
-pub enum Error {
-    Io(std::io::Error),
-    Unexpected(String),
-    Server(String),
-    Disconnected
-}
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::result::Result<(), std::fmt::Error> {
-        match self {
-            Error::Io(ref inner) => inner.fmt(f),
-            Error::Unexpected(ref descr) =>
-                write!(f, "unexpected {}", descr),
-            Error::Server(ref descr) =>
-                write!(f, "server error: {}", descr),
-            _ => f.write_str(&self.to_string())
-        }
-    }
-}
-impl From<std::io::Error> for Error {
-    fn from(e: std::io::Error) -> Error { Error::Io(e) }
-}
-impl From<std::sync::mpsc::RecvError> for Error {
-    fn from(e: std::sync::mpsc::RecvError) -> Error { 
-        Error::Unexpected(format!("Channel recv error: {:?}",e)) 
-    }
-}
-pub type Result<T> = std::result::Result<T, Error>;
 

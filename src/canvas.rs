@@ -1,6 +1,7 @@
 use std::sync::mpsc::{Sender, Receiver};
+use anyhow::Result;
 use minifb::{Key, MouseButton, MouseMode, ScaleMode, Window, WindowOptions};
-use crate::{Result, Rec, ClientEvent, ServerEvent};
+use crate::{Rec, ClientEvent, ServerEvent};
 
 pub struct Canvas {
     window: Window,
@@ -43,7 +44,7 @@ impl Canvas {
                 ..WindowOptions::default()
             })
             .expect("Unable to create window");
-        window.limit_update_rate(Some(std::time::Duration::from_micros(30_000)));
+        window.limit_update_rate(Some(std::time::Duration::from_micros(17_000)));
         self.window = window;
         self.width = width;
         self.height = height;
@@ -182,7 +183,7 @@ impl Canvas {
         if let Ok(reply) = self.server_rx.try_recv() {
              match reply {
                 ServerEvent::FramebufferUpdate { count, rectangles } => {
-                    //println!("Rectangles recieved: {}", count);
+                    println!("Rectangles recieved: {}", count);
                     if count > 0 {
                         for rec in rectangles.iter() {
                             self.draw(rec)?;    
@@ -203,8 +204,9 @@ impl Canvas {
             incremental:true, x: 0, y: 0, 
             width: self.width as u16, height: self.height as u16
         };
-        self.client_tx.send(event).unwrap();
-        //println!("update request...");
+        if let Err(e) = self.client_tx.send(event) {
+            anyhow::bail!("exiting after server disonnection")
+        };
         Ok(())
     }
 }
