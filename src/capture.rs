@@ -11,6 +11,7 @@ pub struct Capture {
     pub rectangles: Vec<Rec>,
     width: u16,
     height: u16,
+    cookie: GetImage,
     pub busy: bool,
 }
 
@@ -33,12 +34,20 @@ impl Capture {
         let (width, height) = (reply.width(), reply.height());
         println!("Geometry xcb: {}x{}", width, height);
         
+        let cookie = GetImage {
+            format: ImageFormat::ZPixmap, 
+            drawable, 
+            x: 0, y: 0, width, height, 
+            plane_mask: u32::MAX,
+        };
+
         Self {
             connection,
             drawable,
             rectangles: vec![],
             width,
             height,
+            cookie,
             busy: false,
         }
     }
@@ -47,27 +56,9 @@ impl Capture {
         self.busy = true;
         if !incremental {
             self.clear();
-        }
-        let cookie = GetImage {
-            format: ImageFormat::ZPixmap, 
-            drawable: self.drawable, 
-            x: 0, y: 0, 
-            width: self.width, height: self.height, 
-            plane_mask: u32::MAX,
-        };
-        let request = self.connection.send_request(&cookie);
+        }        
+        let request = self.connection.send_request(&self.cookie);
         let ximage = self.connection.wait_for_reply(request).unwrap();
-
-        // // BGRA to RGBA
-        // let mut bytes = ximage.data();
-        // for i in (0..bytes.len()).step_by(4) {
-        //     let b = bytes[i];
-        //     let r = bytes[i + 2];      
-        //     bytes[i] = r;
-        //     bytes[i + 2] = b;
-        //     bytes[i + 3] = 255;
-        // }
-        //println!("image captrued");
 
         // save buffer
         let new_rectangles = util::get_rectangles(&ximage.data(), self.width, self.height);

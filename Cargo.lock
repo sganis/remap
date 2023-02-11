@@ -961,6 +961,7 @@ dependencies = [
  "ctrlc",
  "dotenv",
  "enigo",
+ "flume",
  "image",
  "minifb",
  "xcb",

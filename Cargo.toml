@@ -14,6 +14,7 @@ dotenv = "0.15.0"
 # winit = "0.28.1"
 # softbuffer = {git = "https://github.com/rust-windowing/softbuffer" }
 anyhow = "1.0.69"
+flume = "0.10.14"
 
 
 [target.'cfg(windows)'.dependencies]

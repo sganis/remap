@@ -123,9 +123,9 @@ fn main() -> Result<()> {
         println!("Connected to client {:?}", source_addr);
 
         // channels
-        let (capture_tx, capture_rx) = std::sync::mpsc::channel();
-        let (writer_tx, writer_rx) = std::sync::mpsc::channel();
-        let (input_tx, input_rx) = std::sync::mpsc::channel();
+        let (capture_tx, capture_rx) = flume::unbounded();
+        let (writer_tx, writer_rx) = flume::unbounded();
+        let (input_tx, input_rx) = flume::unbounded();
               
         // capture thread
         let mut capture = Capture::new(xid as u32);
@@ -134,24 +134,16 @@ fn main() -> Result<()> {
         stream.write_u16::<BigEndian>(height as u16).unwrap();
 
         std::thread::spawn(move|| {
-            //let mut ncaptures = 0;
-            //let mut ncaptures_req = 0;
             loop {
-                //let mut queue = Vec::new();
                 let mut incremental = true;
                 while let Ok(inc) = capture_rx.try_recv() {
-                    //ncaptures_req += 1;
                     incremental = inc;    
-                    //queue.push(inc);
-                }                
-
+                }
                 let rectangles = capture.get_image(incremental);
-                //ncaptures += 1;
-                //let ignored = queue.len() as i32 - 1;
-                //println!("req: {}, captures: {}, requests ignored: {}", 
-                //    ncaptures_req, ncaptures, ignored);
-                if writer_tx.send(rectangles).is_err() {
-                    break;
+                if rectangles.len() > 0 {
+                    if writer_tx.send(rectangles).is_err() {
+                        break;
+                    }
                 }
             }    
         });
@@ -204,8 +196,7 @@ fn main() -> Result<()> {
                     },
                     ClientEvent::PointerEvent { buttons, x, y} => {
                         let action = if buttons > 0 {"pressed"} else {"release"};
-                        println!("button {}: {}, ({},{})", 
-                            action, buttons, x, y);   
+                        println!("button {}: {}, ({},{})", action, buttons, x, y);   
                     },
                     _ => ()   
                 }                

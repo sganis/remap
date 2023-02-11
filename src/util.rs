@@ -103,7 +103,7 @@ pub fn vec_equal(va: &[u8], vb: &[u8]) -> bool {
 }
 
 pub fn get_rectangles(bytes: &[u8], swidth: u16, sheight: u16) -> Vec<Rec> {
-    let side = 16 as u16;  
+    let side = 64 as u16;  
     let xrects = swidth as u16 / side;
     let rwidth = swidth as u16 % side;
     let yrects = sheight as u16 / side;
