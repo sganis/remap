@@ -9,6 +9,15 @@ pub struct Canvas {
     height: u32,
     client_tx: Sender<ClientEvent>,
     server_rx: Receiver<ServerEvent>,
+    buttons: u8,
+}
+
+enum Pointer {
+    Left = 0x01,
+    Middle = 0x02,
+    Right = 0x04,
+    WheelUp = 0x08,
+    WheelDown = 0x16, 
 }
 
 impl Canvas {
@@ -21,6 +30,7 @@ impl Canvas {
             height: 600,
             client_tx,
             server_rx,
+            buttons: 0u8,
         })
     }
 
@@ -93,22 +103,64 @@ impl Canvas {
 
     pub fn handle_input(&mut self) -> Result<()> {
         if let Some((x, y)) = self.window.get_mouse_pos(MouseMode::Discard) {            
+            let mut event = ClientEvent::PointerEvent { buttons: 0, x: 0, y: 0 };
             if self.window.get_mouse_down(MouseButton::Left) {
-                println!("Mouse down left ({},{})", x,y);
-                let event = ClientEvent::PointerEvent { 
-                    button_mask: 1, x_position: x as u16, y_position: y as u16 };
-                self.client_tx.send(event).unwrap(); 
+                if self.buttons & 0x01 != 0x01 {
+                    self.buttons |= 0x01;
+                    println!("Mouse left down ({},{})", x,y);
+                    let event = ClientEvent::PointerEvent { 
+                        buttons: self.buttons, x: x as u16, y: y as u16 };                
+                    self.client_tx.send(event).unwrap(); 
+                }
+            } else {
+                if self.buttons & 0x01 == 0x01 {
+                    println!("Mouse left up ({},{})", x,y);
+                    self.buttons &= !0x01;
+                }
+            }
+            if self.window.get_mouse_down(MouseButton::Middle) {
+                if self.buttons & 0x02 != 0x02 {
+                    self.buttons |= 0x02;
+                    println!("Mouse middle down ({},{})", x,y);
+                    let event = ClientEvent::PointerEvent { 
+                        buttons: self.buttons, x: x as u16, y: y as u16 };                
+                    self.client_tx.send(event).unwrap(); 
+                }
+            } else {
+                if self.buttons & 0x02 == 0x02 {
+                    println!("Mouse middle up ({},{})", x,y);
+                    self.buttons &= !0x02;
+                }
             }
             if self.window.get_mouse_down(MouseButton::Right) {
-                println!("Mouse down right ({},{})", x,y);
-                let event = ClientEvent::PointerEvent { 
-                    button_mask: 1, x_position: x as u16, y_position: y as u16 };
-                self.client_tx.send(event).unwrap(); 
+                if self.buttons & 0x04 != 0x04 {
+                    self.buttons |= 0x04;
+                    println!("Mouse right down ({},{})", x,y);
+                    let event = ClientEvent::PointerEvent { 
+                        buttons: self.buttons, x: x as u16, y: y as u16 };                
+                    self.client_tx.send(event).unwrap(); 
+                }
+            } else {
+                if self.buttons & 0x04 == 0x04 {
+                    println!("Mouse right up ({},{})", x,y);
+                    self.buttons &= !0x04;
+                }
             }
             if let Some(scroll) = self.window.get_scroll_wheel() {
-                println!("Scrolling {} - {}", scroll.0, scroll.1);
+                let y_direction = scroll.1 as i32;
+                if y_direction > 0 {
+                    println!("Scrolling up");
+                    let event = ClientEvent::PointerEvent { 
+                        buttons: 0x08, x: x as u16, y: y as u16 };
+                    self.client_tx.send(event).unwrap(); 
+                } else {
+                    println!("Scrolling down");
+                    let event = ClientEvent::PointerEvent { 
+                        buttons: 0x16, x: x as u16, y: y as u16 };
+                    self.client_tx.send(event).unwrap(); 
+                }
                 let event = ClientEvent::PointerEvent { 
-                    button_mask: 1, x_position: x as u16, y_position: y as u16 };
+                    buttons: 0, x: x as u16, y: y as u16 };
                 self.client_tx.send(event).unwrap(); 
             }
         }
@@ -130,7 +182,7 @@ impl Canvas {
         if let Ok(reply) = self.server_rx.try_recv() {
              match reply {
                 ServerEvent::FramebufferUpdate { count, rectangles } => {
-                    println!("Rectangles recieved: {}", count);
+                    //println!("Rectangles recieved: {}", count);
                     if count > 0 {
                         for rec in rectangles.iter() {
                             self.draw(rec)?;    
@@ -148,7 +200,7 @@ impl Canvas {
 
     pub fn request_update(&mut self) -> Result<()> {
         let event = ClientEvent::FramebufferUpdateRequest { 
-            incremental:true, x_position: 0, y_position: 0, 
+            incremental:true, x: 0, y: 0, 
             width: self.width as u16, height: self.height as u16
         };
         self.client_tx.send(event).unwrap();

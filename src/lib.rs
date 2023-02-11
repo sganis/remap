@@ -29,8 +29,8 @@ pub enum ClientEvent {
     SetEncodings(Vec<Encoding>),
     FramebufferUpdateRequest {
         incremental: bool,
-        x_position:  u16,
-        y_position:  u16,
+        x:  u16,
+        y:  u16,
         width:       u16,
         height:      u16,
     },
@@ -39,9 +39,9 @@ pub enum ClientEvent {
         key:         u8,
     },
     PointerEvent {
-        button_mask: u8,
-        x_position:  u16,
-        y_position:  u16
+        buttons: u8,
+        x:  u16,
+        y:  u16
     },
     CutText(String),
     // extensions
@@ -72,8 +72,8 @@ impl Message for ClientEvent {
             3 => {
                 Ok(ClientEvent::FramebufferUpdateRequest {
                     incremental: reader.read_u8()? != 0,
-                    x_position:  reader.read_u16::<BigEndian>()?,
-                    y_position:  reader.read_u16::<BigEndian>()?,
+                    x:  reader.read_u16::<BigEndian>()?,
+                    y:  reader.read_u16::<BigEndian>()?,
                     width:       reader.read_u16::<BigEndian>()?,
                     height:      reader.read_u16::<BigEndian>()?
                 })
@@ -81,14 +81,14 @@ impl Message for ClientEvent {
             4 => {
                 let down = reader.read_u8()? != 0;
                 reader.read_exact(&mut [0u8; 2])?;
-                let key = reader.read_u32::<BigEndian>()?;
+                let key = reader.read_u8()?;
                 Ok(ClientEvent::KeyEvent { down, key })
             },
             5 => {
                 Ok(ClientEvent::PointerEvent {
-                    button_mask: reader.read_u8()?,
-                    x_position:  reader.read_u16::<BigEndian>()?,
-                    y_position:  reader.read_u16::<BigEndian>()?
+                    buttons: reader.read_u8()?,
+                    x:  reader.read_u16::<BigEndian>()?,
+                    y:  reader.read_u16::<BigEndian>()?
                 })
             },
             6 => {
@@ -114,12 +114,12 @@ impl Message for ClientEvent {
                 }
             },
             ClientEvent::FramebufferUpdateRequest { 
-                incremental, x_position, y_position, width, height 
+                incremental, x, y, width, height 
             } => {
                 writer.write_u8(3)?;
                 writer.write_u8(if *incremental { 1 } else { 0 })?;
-                writer.write_u16::<BigEndian>(*x_position)?;
-                writer.write_u16::<BigEndian>(*y_position)?;
+                writer.write_u16::<BigEndian>(*x)?;
+                writer.write_u16::<BigEndian>(*y)?;
                 writer.write_u16::<BigEndian>(*width)?;
                 writer.write_u16::<BigEndian>(*height)?;
             },
@@ -127,13 +127,13 @@ impl Message for ClientEvent {
                 writer.write_u8(4)?;
                 writer.write_u8(if *down { 1 } else { 0 })?;
                 writer.write_all(&[0u8; 2])?;
-                writer.write_u32::<BigEndian>(*key)?;
+                writer.write_u8(*key)?;
             },
-            ClientEvent::PointerEvent { button_mask, x_position, y_position } => {
+            ClientEvent::PointerEvent { buttons, x, y } => {
                 writer.write_u8(5)?;
-                writer.write_u8(*button_mask)?;
-                writer.write_u16::<BigEndian>(*x_position)?;
-                writer.write_u16::<BigEndian>(*y_position)?;
+                writer.write_u8(*buttons)?;
+                writer.write_u16::<BigEndian>(*x)?;
+                writer.write_u16::<BigEndian>(*y)?;
             },
             ClientEvent::CutText(ref text) => {
                 String::write_to(text, writer)?;
@@ -277,21 +277,21 @@ impl Message for String {
 
 #[derive(Debug)]
 pub struct CopyRect {
-    pub src_x_position: u16,
-    pub src_y_position: u16,
+    pub src_x: u16,
+    pub src_y: u16,
 }
 
 impl Message for CopyRect {
     fn read_from<R: Read>(reader: &mut R) -> Result<CopyRect> {
         Ok(CopyRect {
-            src_x_position: reader.read_u16::<BigEndian>()?,
-            src_y_position: reader.read_u16::<BigEndian>()?
+            src_x: reader.read_u16::<BigEndian>()?,
+            src_y: reader.read_u16::<BigEndian>()?
         })
     }
 
     fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
-        writer.write_u16::<BigEndian>(self.src_x_position)?;
-        writer.write_u16::<BigEndian>(self.src_y_position)?;
+        writer.write_u16::<BigEndian>(self.src_x)?;
+        writer.write_u16::<BigEndian>(self.src_y)?;
         Ok(())
     }
 }
