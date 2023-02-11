@@ -118,36 +118,21 @@ fn main() -> Result<()> {
     let listener = TcpListener::bind(&input_addr)?;
     println!("Listening on: {}", input_addr);
 
-
     loop {
         let (mut stream, source_addr) = listener.accept()?;
         println!("Connected to client {:?}", source_addr);
-        
+
         // channels
         let (capture_tx, capture_rx) = std::sync::mpsc::channel();
         let (writer_tx, writer_rx) = std::sync::mpsc::channel();
-        
-        // writer thread
-        let writer = stream.try_clone()?;
-
-        std::thread::spawn(move || {
-            let mut writer = writer;
-            loop {
-                let rectangles: Vec<Rec> = writer_rx.recv().unwrap();
-                let message = ServerEvent::FramebufferUpdate {
-                    count: rectangles.len() as u16,
-                    rectangles,
-                };                
-                if message.write_to(&mut writer).is_err() {
-                    break;
-                }
-            }    
-        });
-        
+        let (input_tx, input_rx) = std::sync::mpsc::channel();
+              
         // capture thread
         let mut capture = Capture::new(xid as u32);
         let (width, height) = capture.get_geometry();
-        
+        stream.write_u16::<BigEndian>(width as u16).unwrap();
+        stream.write_u16::<BigEndian>(height as u16).unwrap();
+
         std::thread::spawn(move|| {
             //let mut ncaptures = 0;
             //let mut ncaptures_req = 0;
@@ -170,10 +155,25 @@ fn main() -> Result<()> {
                 }
             }    
         });
-       
-        // send geometry
-        stream.write_u16::<BigEndian>(width as u16).unwrap();
-        stream.write_u16::<BigEndian>(height as u16).unwrap();
+        
+        // writer thread
+        let writer = stream.try_clone()?;
+        std::thread::spawn(move || {
+            let mut writer = writer;
+            loop {
+                let rectangles: Vec<Rec> = match writer_rx.recv() {
+                    Err(_) => break,
+                    Ok(o) => o,
+                };
+                let message = ServerEvent::FramebufferUpdate {
+                    count: rectangles.len() as u16,
+                    rectangles,
+                };                
+                if message.write_to(&mut writer).is_err() { 
+                    break; 
+                }
+            }    
+        });
         
         // setup input
         let mut input = Input::new();
@@ -185,43 +185,51 @@ fn main() -> Result<()> {
             input.focus();    
         }
 
-        //let mut ncaptures_req = 0;
+        // input thread
+        std::thread::spawn(move || {
+            loop {
+                let message: ClientEvent = match input_rx.recv() {
+                    Err(e) => break,
+                    Ok(o) => o,
+                };
+                match message {
+                    ClientEvent::KeyEvent {down, key} => {
+                        //let action = if down {"pressed"} else {"released"};
+                        //println!("key {}: {}", action, key);
+                        if down {
+                            input.key_down(key);
+                        } else {
+                            input.key_up(key);
+                        }
+                    },
+                    ClientEvent::PointerEvent { buttons, x, y} => {
+                        let action = if buttons > 0 {"pressed"} else {"release"};
+                        println!("button {}: {}, ({},{})", 
+                            action, buttons, x, y);   
+                    },
+                    _ => ()   
+                }                
+            }    
+        });
         
         loop {
             let message = match ClientEvent::read_from(&mut stream) {
-                Err(error) => {
-                    println!("Client disconnected");
-                    break;
-                },
+                Err(_) => { println!("Client disconnected");  break; },
                 Ok(message) => message,
             };
-            //println!("message from client: {:?}", message);
-
             match message {
-                ClientEvent::KeyEvent {down, key} => {
-                    let action = if down {"pressed"} else {"released"};
-                    println!("key {}: {}", action, key);
-                    if down {
-                        input.key_down(key);
-                    } else {
-                        input.key_up(key);
+                ClientEvent::KeyEvent {..} |
+                ClientEvent::PointerEvent {..} => {                    
+                    if input_tx.send(message).is_err() { 
+                        break; 
+                    }    
+                },
+                ClientEvent::FramebufferUpdateRequest {incremental, .. } => {
+                    if capture_tx.send(incremental).is_err() {
+                        break; 
                     }
                 },
-                ClientEvent::PointerEvent { buttons, x, y} => {
-                    let action = if buttons > 0 {"pressed"} else {"release"};
-                    println!("button {}: {}, ({},{})", 
-                        action, buttons, x, y);   
-                },
-                ClientEvent::FramebufferUpdateRequest {
-                    incremental, x, y, width, height } => {
-                    //println!("Update req: {x} {y} {width} {height}");
-                    capture_tx.send(incremental).unwrap();
-                    //ncaptures_req += 1; 
-                    //println!("captures requests: {}", ncaptures_req);                                           
-                },
-                _ => {
-                    println!("Unknown message");
-                }
+                _ => { println!("Unknown message from client"); }
             }                               
         }
     }
