@@ -1,5 +1,6 @@
 #[cfg(unix)]
 use enigo::{Enigo, MouseButton as EnigoMouseButton, MouseControllable, Key, KeyboardControllable};
+use std::collections::HashMap;
 use crate::Geometry;
 
 #[cfg(unix)]
@@ -7,16 +8,61 @@ pub struct Input {
     enigo: Option<Enigo>,
     server_geometry: Geometry,
     client_geometry: Geometry,
+    keymap: HashMap<u8, Key>,
 }
 
 #[cfg(unix)]
 #[allow(dead_code)]
 impl Input {
     pub fn new() -> Self {
+        let keymap = HashMap::from([
+            (10, Key::Layout('a')),
+            (11, Key::Layout('b')),
+            (12, Key::Layout('c')),
+            (13, Key::Layout('d')),
+            (14, Key::Layout('e')),
+            (15, Key::Layout('f')),
+            (16, Key::Layout('g')),
+            (17, Key::Layout('h')),
+            (18, Key::Layout('i')),
+            (19, Key::Layout('j')),
+            (20, Key::Layout('k')),
+            (21, Key::Layout('l')),
+            (22, Key::Layout('m')),
+            (23, Key::Layout('m')),
+            (24, Key::Layout('o')),
+            (25, Key::Layout('p')),
+            (26, Key::Layout('q')),
+            (27, Key::Layout('r')),
+            (28, Key::Layout('s')),
+            (29, Key::Layout('t')),
+            (30, Key::Layout('u')),
+            (31, Key::Layout('v')),
+            (32, Key::Layout('w')),
+            (33, Key::Layout('x')),
+            (34, Key::Layout('y')),
+            (35, Key::Layout('z')),
+            (51, Key::DownArrow),
+            (52, Key::LeftArrow),
+            (53, Key::RightArrow),
+            (54, Key::UpArrow),
+            (61, Key::Layout('-')),
+            (66, Key::Backspace),
+            (67, Key::Delete),
+            (68, Key::End),
+            (69, Key::Return),
+            (70, Key::Escape),
+            (71, Key::Home),
+            (74, Key::PageDown),
+            (75, Key::PageUp),
+            (77, Key::Space),
+            (78, Key::Tab),
+        ]);
         Self { 
             enigo: Some(Enigo::new()),
             server_geometry : Geometry::default(),
             client_geometry : Geometry::default(),
+            keymap,
         }
     }
     pub fn set_server_geometry(&mut self, geometry: Geometry) {
@@ -52,67 +98,14 @@ impl Input {
     pub fn mouse_move(&mut self, x: i32, y:i32, modifiers: u32) {
         self.enigo.as_mut().unwrap().mouse_move_to(x, y);
     }
-    pub fn key_press(&mut self, key: &str, modifiers: u32) {
-        println!(" key to match: {:?}", key);
-        let k = match key {
-            "Return" => Key::Return,
-            "BackSpace" => Key::Backspace,
-            "Delete" => Key::Delete,
-            "Page_Up" => Key::PageUp,
-            "Page_Down" => Key::PageDown,
-            "Up" => Key::UpArrow,
-            "Down" => Key::DownArrow,
-            "Left" => Key::LeftArrow,
-            "Right" => Key::RightArrow,
-            "End" => Key::End,
-            "Home" => Key::Home,
-            "Tab" => Key::Tab,
-            "Escape" => Key::Escape,
-            c => Key::Layout(c.chars().next().unwrap()),
-        };
-        println!(" key detected: {:?}", k);
-        self.enigo.as_mut().unwrap().key_click(k);
+    pub fn key_down(&mut self, key: u8) {
+        let k = self.keymap.get(&key).unwrap();
+        self.enigo.as_mut().unwrap().key_down(*k);
     }
-    pub fn key_down(&mut self, key: &str) {
+    pub fn key_up(&mut self, key: u8) {
         println!(" key to match: {:?}", key);
-        let k = match key {
-            "Return" => Key::Return,
-            "BackSpace" => Key::Backspace,
-            "Delete" => Key::Delete,
-            "Page_Up" => Key::PageUp,
-            "Page_Down" => Key::PageDown,
-            "Up" => Key::UpArrow,
-            "Down" => Key::DownArrow,
-            "Left" => Key::LeftArrow,
-            "Right" => Key::RightArrow,
-            "End" => Key::End,
-            "Home" => Key::Home,
-            "Tab" => Key::Tab,
-            "Escape" => Key::Escape,
-            c => Key::Layout(c.chars().next().unwrap()),
-        };
+        let k = self.keymap.get(&key).unwrap();
         println!(" key detected: {:?}", k);
-        self.enigo.as_mut().unwrap().key_down(k);
-    }
-    pub fn key_up(&mut self, key: &str) {
-        println!(" key to match: {:?}", key);
-        let k = match key {
-            "Return" => Key::Return,
-            "BackSpace" => Key::Backspace,
-            "Delete" => Key::Delete,
-            "Page_Up" => Key::PageUp,
-            "Page_Down" => Key::PageDown,
-            "Up" => Key::UpArrow,
-            "Down" => Key::DownArrow,
-            "Left" => Key::LeftArrow,
-            "Right" => Key::RightArrow,
-            "End" => Key::End,
-            "Home" => Key::Home,
-            "Tab" => Key::Tab,
-            "Escape" => Key::Escape,
-            c => Key::Layout(c.chars().next().unwrap()),
-        };
-        println!(" key detected: {:?}", k);
-        self.enigo.as_mut().unwrap().key_up(k);
+        self.enigo.as_mut().unwrap().key_up(*k);
     }
 }

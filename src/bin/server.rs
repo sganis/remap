@@ -199,23 +199,22 @@ fn main() -> Result<()> {
 
             match message {
                 ClientEvent::KeyEvent {down, key} => {
-                    //let keyname = gdk::keys::Key::from(key).name().unwrap();
                     let action = if down {"pressed"} else {"released"};
                     println!("key {}: {}", action, key);
                     if down {
-                        //input.key_down(&keyname);
+                        input.key_down(key);
                     } else {
-                        //input.key_up(&keyname);
+                        input.key_up(key);
                     }
                 },
-                ClientEvent::PointerEvent { button_mask, x_position, y_position} => {
-                    let action = if button_mask > 0 {"pressed"} else {"release"};
+                ClientEvent::PointerEvent { buttons, x, y} => {
+                    let action = if buttons > 0 {"pressed"} else {"release"};
                     println!("button {}: {}, ({},{})", 
-                        action, button_mask, x_position, y_position);   
+                        action, buttons, x, y);   
                 },
                 ClientEvent::FramebufferUpdateRequest {
-                    incremental, x_position, y_position, width, height } => {
-                    //println!("Update req: {x_position} {y_position} {width} {height}");
+                    incremental, x, y, width, height } => {
+                    //println!("Update req: {x} {y} {width} {height}");
                     capture_tx.send(incremental).unwrap();
                     //ncaptures_req += 1; 
                     //println!("captures requests: {}", ncaptures_req);                                           
