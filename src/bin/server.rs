@@ -6,6 +6,7 @@ use std::str::FromStr;
 use std::{time::Instant};
 use clap::Parser;
 use anyhow::{Result};
+use log::{debug,info,warn,error};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use remap::{util, Rec, Geometry, ClientEvent, ServerEvent, Message};
 use remap::capture::Capture;
@@ -32,6 +33,7 @@ struct Cli {
 }
 
 fn main() -> Result<()> {
+    env_logger::init();
     let cli = Cli::parse();
     let display = cli.display.unwrap_or(100);
     let app = cli.app.unwrap_or(
@@ -47,11 +49,11 @@ fn main() -> Result<()> {
     let mut xid = 0;
     let mut geometry = Geometry::default();
 
-    println!("Display: :{}", display);
-    println!("App: {}", app);
-    println!("Args: {:?}", args);
-    println!("Port: {}", port);
-    println!("Verbosity: {}", cli.verbose);
+    info!("Display: :{}", display);
+    info!("App: {}", app);
+    info!("Args: {:?}", args);
+    info!("Port: {}", port);
+    info!("Verbosity: {}", cli.verbose);
 
     if !desktop {
         std::env::set_var("DISPLAY",&format!(":{display}"));
@@ -68,12 +70,12 @@ fn main() -> Result<()> {
                 &format!(":{display}")])
             .spawn()
             .expect("display failed to start");
-        println!("display pid: {}", p.id());
+        info!("display pid: {}", p.id());
         display_proc = Some(p);
 
         // wait for it
         while !util::is_display_server_running(display) {
-            println!("Waiging display...");
+            info!("Waiging display...");
             std::thread::sleep(std::time::Duration::from_millis(200));
         }    
         
@@ -84,21 +86,21 @@ fn main() -> Result<()> {
             .expect("Could not run app");
         let pid = p.id();
         app_proc = Some(p);
-        println!("app pid: {pid}");
+        info!("app pid: {pid}");
         
         // find window ID,. wait for it
         //let window_name = app;
         //xid = util::get_window_id(pid, window_name, display);   
         xid = util::get_window_id(pid, display);   
         while xid == 0 {
-            println!("Waiting window id...");
+            info!("Waiting window id...");
             std::thread::sleep(std::time::Duration::from_millis(200));
             xid = util::get_window_id(pid, display);
         } 
-        println!("Window xid: {} ({:#06x})", xid, xid);
+        info!("Window xid: {} ({:#06x})", xid, xid);
 
         geometry = util::get_window_geometry(xid, display);
-        println!("Geometry: {:?}", geometry);
+        info!("Geometry: {:?}", geometry);
 
     }
 
@@ -106,21 +108,21 @@ fn main() -> Result<()> {
     ctrlc::set_handler(move || {
         if let Some(p) = &mut app_proc {
             p.kill().unwrap();
-            println!("App stopped.");        
+            info!("App stopped.");        
         }
         if let Some(p) = &mut display_proc {        
             p.kill().unwrap();        
-            println!("Display :{display} stopped.");        
+            info!("Display :{display} stopped.");        
         }
         std::process::exit(0);
     }).unwrap();
 
     let listener = TcpListener::bind(&input_addr)?;
-    println!("Listening on: {}", input_addr);
+    info!("Listening on: {}", input_addr);
 
     loop {
         let (mut stream, source_addr) = listener.accept()?;
-        println!("Connected to client {:?}", source_addr);
+        info!("Connected to client {:?}", source_addr);
 
         // channels
         let (capture_tx, capture_rx) = flume::unbounded();
@@ -134,6 +136,7 @@ fn main() -> Result<()> {
         stream.write_u16::<BigEndian>(height as u16).unwrap();
 
         std::thread::spawn(move|| {
+            
             loop {
                 let mut incremental = true;
                 while let Ok(inc) = capture_rx.try_recv() {
@@ -172,7 +175,7 @@ fn main() -> Result<()> {
         if !desktop {
             input.set_window(xid);
             let pid = input.get_window_pid();
-            println!("window pid: {}", pid);
+            info!("window pid: {}", pid);
             input.set_server_geometry(geometry);
             input.focus();    
         }
@@ -187,7 +190,7 @@ fn main() -> Result<()> {
         //         match message {
         //             ClientEvent::KeyEvent {down, key} => {
         //                 //let action = if down {"pressed"} else {"released"};
-        //                 //println!("key {}: {}", action, key);
+        //                 //info!("key {}: {}", action, key);
         //                 if down {
         //                     input.key_down(key);
         //                 } else {
@@ -196,7 +199,7 @@ fn main() -> Result<()> {
         //             },
         //             ClientEvent::PointerEvent { buttons, x, y} => {
         //                 let action = if buttons > 0 {"pressed"} else {"release"};
-        //                 println!("button {}: {}, ({},{})", action, buttons, x, y);   
+        //                 info!("button {}: {}, ({},{})", action, buttons, x, y);   
         //             },
         //             _ => ()   
         //         }                
@@ -205,13 +208,13 @@ fn main() -> Result<()> {
         
         loop {
             let message = match ClientEvent::read_from(&mut stream) {
-                Err(_) => { println!("Client disconnected");  break; },
+                Err(_) => { info!("Client disconnected");  break; },
                 Ok(message) => message,
             };
             match message {
                 ClientEvent::KeyEvent {down, key} => {
                     let action = if down {"pressed"} else {"released"};
-                    println!("key {}: {}", action, key);
+                    info!("key {}: {}", action, key);
                     if down {
                         input.key_down(key);
                     } else {
@@ -220,14 +223,14 @@ fn main() -> Result<()> {
                 },
                 ClientEvent::PointerEvent { buttons, x, y} => {
                     let action = if buttons > 0 {"pressed"} else {"release"};
-                    println!("button {}: {}, ({},{})", action, buttons, x, y);   
+                    info!("button {}: {}, ({},{})", action, buttons, x, y);   
                 },                 
                 ClientEvent::FramebufferUpdateRequest {incremental, .. } => {
                     if capture_tx.send(incremental).is_err() {
                         break; 
                     }
                 },
-                _ => { println!("Unknown message from client"); }
+                _ => { info!("Unknown message from client"); }
             }                               
         }
     }
