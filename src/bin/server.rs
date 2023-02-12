@@ -6,7 +6,7 @@ use std::str::FromStr;
 use std::{time::Instant};
 use clap::Parser;
 use anyhow::{Result};
-use log::{debug,info,warn,error};
+use log::{debug,info,warn,error,trace};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use remap::{util, Rec, Geometry, ClientEvent, ServerEvent, Message};
 use remap::capture::Capture;
@@ -136,14 +136,17 @@ fn main() -> Result<()> {
         stream.write_u16::<BigEndian>(height as u16).unwrap();
 
         std::thread::spawn(move|| {
-            
             loop {
                 let mut incremental = true;
                 while let Ok(inc) = capture_rx.try_recv() {
+                    trace!("capture_rx.try_recv() ok");
                     incremental = inc;    
-                }
+                }                
+                let t = Instant::now();
                 let rectangles = capture.get_image(incremental);
+                trace!("capture took: {:?}", t.elapsed());
                 if rectangles.len() > 0 {
+                    debug!("new rectanges: {}, sending to writer...", rectangles.len());    
                     if writer_tx.send(rectangles).is_err() {
                         break;
                     }
@@ -156,6 +159,7 @@ fn main() -> Result<()> {
         std::thread::spawn(move || {
             let mut writer = writer;
             loop {
+                debug!("writer_rx.recv()");
                 let rectangles: Vec<Rec> = match writer_rx.recv() {
                     Err(_) => break,
                     Ok(o) => o,
@@ -164,6 +168,7 @@ fn main() -> Result<()> {
                     count: rectangles.len() as u16,
                     rectangles,
                 };                
+                debug!("writing capture to network...");
                 if message.write_to(&mut writer).is_err() { 
                     break; 
                 }

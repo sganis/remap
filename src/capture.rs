@@ -1,9 +1,9 @@
 use xcb::x::{Window, Drawable, GetImage, ImageFormat, GetGeometry};
 use xcb::{Connection, XidNew};
-use anyhow::{Ok, Result};
-
+use anyhow::Result;
+use std::time::Instant;
 use crate::util;
-use crate::{Rec};
+use crate::Rec;
 
 pub struct Capture {
     connection: Connection,

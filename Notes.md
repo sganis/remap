@@ -129,3 +129,8 @@ gst-launch-1.0 v4l2src ! \
 # RFB
 git@github.com:HsuJv/vnc-rs.git
 git@github.com:whitequark/rust-vnc.git
+
+
+# vscode
+- remove inlay hints
+- disable semanticTokenColorCustomizations
