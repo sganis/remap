@@ -2,13 +2,14 @@ use std::process::Command;
 use std::net::{TcpStream};
 use byteorder::{BigEndian, ReadBytesExt};
 use anyhow::Result;
+use log::{debug,info,warn,error};
 use remap::{ClientEvent, ServerEvent, Message};
 use remap::canvas::Canvas;
 use remap::util;
 
 
 pub fn main() -> Result<()> {
-    
+    env_logger::init();
     dotenv::dotenv().expect(".env file missing");
     let user = std::env::var("REMAP_USER").expect("REMAP_USER env var missing");
     let host = std::env::var("REMAP_HOST").expect("REMAP_HOST env var missing");
@@ -20,10 +21,10 @@ pub fn main() -> Result<()> {
     // Spawn ssh tunnel thread
     std::thread::spawn(move|| {
         if util::port_is_listening(port) {
-            println!("Tunnel exists, reusing...");            
+            info!("Tunnel exists, reusing...");            
             tx.send(()).expect("Could not send signal on channel.");
         } else {
-            println!("Connecting...");
+            info!("Connecting...");
             let _handle = Command::new("ssh")
                 .args(["-oStrictHostkeyChecking=no","-N","-L", 
                     &format!("{port}:127.0.0.1:{port}"),
@@ -38,16 +39,16 @@ pub fn main() -> Result<()> {
     
     // wait for signal
     rx.recv().expect("Could not receive from channel.");
-    println!("Tunnel Ok.");
+    info!("Tunnel Ok.");
     
     //  connection
     let mut stream = TcpStream::connect(&format!("127.0.0.1:{port}"))?;
     let writer = stream.try_clone()?;
     let reader = stream.try_clone()?;
-    println!("Connected");
+    info!("Connected");
     let width = stream.read_u16::<BigEndian>()?;
     let height = stream.read_u16::<BigEndian>()?;
-    println!("Geometry: {}x{}", width, height);
+    info!("Geometry: {}x{}", width, height);
 
     let (client_tx, client_rx) = flume::unbounded();
     let (canvas_tx, canvas_rx) = flume::unbounded();
@@ -55,7 +56,9 @@ pub fn main() -> Result<()> {
     std::thread::spawn(move || {        
         let mut writer = writer;
         loop {
+            debug!("canvas_rx.recv()...");
             let request: ClientEvent = canvas_rx.recv().unwrap();
+            debug!("writing to network {:?}...", request);
             if request.write_to(&mut writer).is_err() {
                 break;
             } 
@@ -65,13 +68,15 @@ pub fn main() -> Result<()> {
     std::thread::spawn(move || {        
         let mut reader = reader;
         loop {
+            debug!("reading from network...");
             let reply = match ServerEvent::read_from(&mut reader) {
                 Err(_) => {
-                    println!("Server disconnected");
+                    info!("Server disconnected");
                     break;
                 },
                 Ok(o) => o,
             };   
+            debug!("client_tx.send()...");
             client_tx.send(reply).unwrap();        
         }
     });
@@ -84,7 +89,7 @@ pub fn main() -> Result<()> {
         canvas.handle_input()?;
         canvas.handle_server_events()?;
         canvas.update()?;
-        canvas.request_update()?;
+        //canvas.request_update()?;
     }
 
     canvas.close();

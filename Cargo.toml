@@ -6,7 +6,6 @@ edition = "2021"
 [dependencies]
 clap = {version = "4.1.4", features=['derive']}
 ctrlc = "3.2.4"
-# lazy_static = "1.4.0"
 byteorder = "1.4.3"
 image = "0.24.5"
 minifb = "0.23.0"
@@ -15,6 +14,8 @@ dotenv = "0.15.0"
 # softbuffer = {git = "https://github.com/rust-windowing/softbuffer" }
 anyhow = "1.0.69"
 flume = "0.10.14"
+log = "0.4.17"
+env_logger = "0.10.0"
 
 
 [target.'cfg(windows)'.dependencies]
