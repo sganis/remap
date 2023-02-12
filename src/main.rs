@@ -2,15 +2,15 @@ use std::process::Command;
 use std::net::{TcpStream};
 use byteorder::{BigEndian, ReadBytesExt};
 use anyhow::Result;
-use log::{debug,info,warn,error};
+use log::{debug,info,warn,error,trace};
 use remap::{ClientEvent, ServerEvent, Message};
 use remap::canvas::Canvas;
 use remap::util;
 
 
 pub fn main() -> Result<()> {
-    env_logger::init();
     dotenv::dotenv().expect(".env file missing");
+    env_logger::init();
     let user = std::env::var("REMAP_USER").expect("REMAP_USER env var missing");
     let host = std::env::var("REMAP_HOST").expect("REMAP_HOST env var missing");
     let port: u16 = 10100;
@@ -43,8 +43,8 @@ pub fn main() -> Result<()> {
     
     //  connection
     let mut stream = TcpStream::connect(&format!("127.0.0.1:{port}"))?;
-    let writer = stream.try_clone()?;
-    let reader = stream.try_clone()?;
+    let mut writer = stream.try_clone()?;
+    let mut reader = stream.try_clone()?;
     info!("Connected");
     let width = stream.read_u16::<BigEndian>()?;
     let height = stream.read_u16::<BigEndian>()?;
@@ -53,46 +53,39 @@ pub fn main() -> Result<()> {
     let (client_tx, client_rx) = flume::unbounded();
     let (canvas_tx, canvas_rx) = flume::unbounded();
 
-    std::thread::spawn(move || {        
-        let mut writer = writer;
-        loop {
-            debug!("canvas_rx.recv()...");
-            let request: ClientEvent = canvas_rx.recv().unwrap();
-            debug!("writing to network {:?}...", request);
-            if request.write_to(&mut writer).is_err() {
-                break;
-            } 
+    std::thread::spawn(move || loop {        
+        trace!("canvas_rx.recv()...");
+        let request: ClientEvent = canvas_rx.recv().unwrap();
+        debug!("writing to network {:?}...", request);
+        if request.write_to(&mut writer).is_err() {
+            break;
         }
     });
 
-    std::thread::spawn(move || {        
-        let mut reader = reader;
-        loop {
-            debug!("reading from network...");
-            let reply = match ServerEvent::read_from(&mut reader) {
-                Err(_) => {
-                    info!("Server disconnected");
-                    break;
-                },
-                Ok(o) => o,
-            };   
-            debug!("client_tx.send()...");
-            client_tx.send(reply).unwrap();        
-        }
+    std::thread::spawn(move || loop {        
+        debug!("reading from network...");
+        let reply = match ServerEvent::read_from(&mut reader) {
+            Err(_) => {
+                info!("Server disconnected");
+                break;
+            },
+            Ok(o) => o,
+        };   
+        trace!("client_tx.send()...");
+        client_tx.send(reply).unwrap();           
     });
  
     let mut canvas = Canvas::new(canvas_tx, client_rx)?;
     canvas.resize(width as u32, height as u32)?;
 
-    // loop at update rate
+    // loop at update rate when calling canvas.update()
     while canvas.is_open() {
         canvas.handle_input()?;
         canvas.handle_server_events()?;
         canvas.update()?;
         //canvas.request_update()?;
     }
-
+    
     canvas.close();
     Ok(())
-
 }
