@@ -1,6 +1,7 @@
 use std::net::TcpListener;
 use std::process::Command;
 use std::path::Path;
+use log::{debug,trace};
 use crate::{Geometry, Rec};
 
 pub fn port_is_listening(port: u16) -> bool {
@@ -55,21 +56,54 @@ pub fn fix_path<P: AsRef<Path>>(p: P) -> String {
 //         Err(_) => 0,
 //     }
 // }
-pub fn get_window_id(pid: u32, display: u32) -> i32 {
+pub fn get_window_id(pid: u32, name: &str, display: u32) -> i32 {
     let r = Command::new("xdotool")
         .env("DISPLAY",format!(":{display}"))
         .arg("search")
         .arg("--maxdepth")
-        .arg("1")        
+        .arg("1")  
         .arg("--pid")
         .arg(pid.to_string())       
+        .arg("--name")  
+        .arg("--class")  
+        .arg("--classname")
+        .arg("--name")  
+        .arg(name)
         .output()
         .expect("Could not run find window id command");
-    let stdout = String::from_utf8_lossy(&r.stdout).trim().to_string();
-    let lines:Vec<String> = vec!(stdout.lines().collect());
-    match lines[lines.len()-1].parse::<i32>() {
-        Ok(xid) => xid,
-        Err(_) => 0,
+    let stdout = std::str::from_utf8(&r.stdout).unwrap();   
+    let lines: Vec<&str> = stdout.lines().collect();
+    debug!("xdotool: {stdout}, {:?}", lines);
+    
+    if lines.len() == 0 {
+
+        0
+    } else if lines.len() == 1 {
+        match lines[0].parse::<i32>() {
+            Ok(xid) => xid,
+            Err(_) => 0,
+        }    
+    } else {
+        // many windows
+        debug!("many windows found, getting the largest");
+        for id in lines {
+            let r = Command::new("xwininfo")
+                .env("DISPLAY",format!(":{display}"))
+                .arg("-id")
+                .arg(id)
+                .output()
+                .expect("Could not run find window id command"); 
+            let stdout = String::from_utf8_lossy(&r.stdout).trim().to_string();    
+            trace!("xwininfo: {stdout}");
+            //let lines2:Vec<String> = vec!(stdout.lines().collect());
+            let re = regex::Regex::new(r"-geometry (\d+)x(\d+)").unwrap();
+            let caps = re.captures(&stdout).unwrap();
+            debug!("captures: {:?}", caps);
+            if caps.get(1).unwrap().as_str().parse::<i32>().unwrap() > 10 {
+                return id.parse::<i32>().unwrap();                 
+            }
+        }
+        0
     }
 }
 

@@ -91,11 +91,11 @@ fn main() -> Result<()> {
         // find window ID,. wait for it
         //let window_name = app;
         //xid = util::get_window_id(pid, window_name, display);   
-        xid = util::get_window_id(pid, display);   
+        xid = util::get_window_id(pid, app, display);   
         while xid == 0 {
             info!("Waiting window id...");
             std::thread::sleep(std::time::Duration::from_millis(200));
-            xid = util::get_window_id(pid, display);
+            xid = util::get_window_id(pid, app, display);
         } 
         info!("Window xid: {} ({:#06x})", xid, xid);
 

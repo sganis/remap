@@ -16,6 +16,8 @@ anyhow = "1.0.69"
 flume = "0.10.14"
 log = "0.4.17"
 env_logger = "0.10.0"
+xcb = { version = "1.2.0", features = ["damage"] }
+regex = "1.7.1"
 
 
 [target.'cfg(windows)'.dependencies]
