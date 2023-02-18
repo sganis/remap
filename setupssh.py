@@ -1,7 +1,5 @@
-# Rustyssh
+# Setup ssh keys
 # 12/21/2022, San
-# setup ssh keys
-
 import os
 import paramiko
 import logging
