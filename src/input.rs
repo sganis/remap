@@ -39,7 +39,7 @@ impl Input {
             (20, Key::Layout('k')),
             (21, Key::Layout('l')),
             (22, Key::Layout('m')),
-            (23, Key::Layout('m')),
+            (23, Key::Layout('n')),
             (24, Key::Layout('o')),
             (25, Key::Layout('p')),
             (26, Key::Layout('q')),
