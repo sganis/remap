@@ -46,9 +46,9 @@ fn main() -> xcb::Result<()> {
                 //x::EventMask::KEY_RELEASE |
                 x::EventMask::BUTTON_PRESS |
                 //x::EventMask::BUTTON_RELEASE |
-                //x::EventMask::COLOR_MAP_CHANGE |
-                //x::EventMask::STRUCTURE_NOTIFY |
-                x::EventMask::SUBSTRUCTURE_NOTIFY 
+                x::EventMask::COLOR_MAP_CHANGE |
+                x::EventMask::STRUCTURE_NOTIFY |
+                x::EventMask::SUBSTRUCTURE_NOTIFY
                 //x::EventMask::NO_EVENT
                 //x::EventMask::SUBSTRUCTURE_REDIRECT |
                 //x::EventMask::RESIZE_REDIRECT 
@@ -166,8 +166,8 @@ fn main() -> xcb::Result<()> {
         damage,
         drawable: x::Drawable::Window(window),
         //drawable: x::Drawable::Window(screen.root()),
-        level: xcb::damage::ReportLevel::NonEmpty
-        //level: xcb::damage::ReportLevel::RawRectangles,
+        //level: xcb::damage::ReportLevel::NonEmpty
+        level: xcb::damage::ReportLevel::DeltaRectangles
     });
     
     //let damage_data = xcb::damage::get_extension_data(&conn);
@@ -178,9 +178,6 @@ fn main() -> xcb::Result<()> {
     conn.flush()?;
 
     let mut maximized = false;
-
-
-
 
     // We enter the main event loop
     loop {
@@ -200,14 +197,13 @@ fn main() -> xcb::Result<()> {
         match event {
             xcb::Event::X(x::Event::Expose(_ev)) => {
                 // let drawable = x::Drawable::Window(window);
-
-                // /* We draw the points */
-                // conn.send_request(&x::PolyPoint {
-                //     coordinate_mode: x::CoordMode::Origin,
+                // /* We draw the rectangles */
+                // conn.send_request(&x::PolyRectangle {
                 //     drawable,
                 //     gc,
-                //     points,
+                //     rectangles,
                 // });
+
                 // conn.flush()?;
             }
             xcb::Event::X(x::Event::KeyPress(ev)) => {
@@ -254,7 +250,7 @@ fn main() -> xcb::Result<()> {
                 println!("key release: {:?}", ev);
             }            
             xcb::Event::X(x::Event::ButtonPress(ev)) => {
-                println!("Button pressed: {:?}", ev);
+                //println!("Button pressed: {:?}", ev);
 
                 let drawable = x::Drawable::Window(window);
 
@@ -276,7 +272,7 @@ fn main() -> xcb::Result<()> {
             }       
             xcb::Event::X(x::Event::ClientMessage(ev)) => {
                 // We have received a message from the server
-                println!("event: {:?}", ev);
+                //println!("client event: {:?}", ev);
 
                 if let x::ClientMessageData::Data32([atom, ..]) = ev.data() {
                     if atom == wm_del_window.resource_id() {
@@ -288,10 +284,10 @@ fn main() -> xcb::Result<()> {
                 }
             }         
             xcb::Event::Damage(xcb::damage::Event::Notify(ev)) => {
-                println!("damage event: {:#?}", ev);
+                //println!("damage event: {:#?}", ev);
             }
-            e => {
-                println!("other event: {:#?}", e);
+            _e => {
+                //println!("other event: {:#?}", e);
             }
         }
     }
