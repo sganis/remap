@@ -146,6 +146,19 @@ fn main() -> xcb::Result<()> {
             x::Gc::GraphicsExposures(false),
         ],
     });
+    conn.flush()?;
+
+    conn.wait_for_reply(conn.send_request(&xcb::damage::QueryVersion {
+		client_major_version: xcb::damage::MAJOR_VERSION,
+		client_minor_version: xcb::damage::MINOR_VERSION,
+	}))?;
+
+	// conn.check_request(conn.send_request_checked(&xcb::damage::Create {
+	// 	damage: conn.generate_id(),
+	// 	drawable: xcb::x::Drawable::Window(root_window),
+	// 	level: xcb::damage::ReportLevel::RawRectangles,
+	// })).unwrap();
+
 
     // create damage
     let damage: xcb::damage::Damage = conn.generate_id();   
@@ -154,6 +167,7 @@ fn main() -> xcb::Result<()> {
         drawable: x::Drawable::Window(window),
         //drawable: x::Drawable::Window(screen.root()),
         level: xcb::damage::ReportLevel::NonEmpty
+        //level: xcb::damage::ReportLevel::RawRectangles,
     });
     
     //let damage_data = xcb::damage::get_extension_data(&conn);
