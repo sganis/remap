@@ -1,18 +1,33 @@
-[workspace]
-members = ["protocol", "client", "server"]
-resolver = "2"
-
-[workspace.package]
-edition = "2021"
+[package]
+name = "remap"
 version = "0.1.0"
+edition = "2021"
 
-[workspace.dependencies]
+# Two binaries in one crate
+[[bin]]
+name = "client"
+path = "src/bin/client.rs"
+
+[[bin]]
+name = "server"
+path = "src/bin/server.rs"
+# Optional: require a feature so 'cargo build' on mac doesn't even try to build server.
+# required-features = ["server"]
+
+[features]
+# Enable this if you want to force-build the Linux server (not needed if you rely on cfg(target_os))
+server = []
+
+[dependencies]
 anyhow = "1"
-byteorder = "1.5"
 flume = "0.11"
+byteorder = "1.5"
 log = "0.4"
 env_logger = "0.11"
 dotenv = "0.15"
-clap = { version = "4.1.4", features = ["derive"] }
-image = "0.25"
 regex = "1"
+minifb = "0.28"
+
+# Linux-only deps (server capture/injection; not pulled on macOS/Windows)
+[target.'cfg(target_os = "linux")'.dependencies]
+xcb = { version = "1.2.0", features = ["damage", "xfixes", "xtest"] }

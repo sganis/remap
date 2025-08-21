@@ -1,7 +1,5 @@
 use std::net::TcpListener;
-use std::process::Command;
-use log::{debug, trace};
-use remap_protocol::{Geometry, Rec};
+use crate::Rec;
 
 pub fn port_is_listening(port: u16) -> bool {
     TcpListener::bind(("127.0.0.1", port)).is_err()
