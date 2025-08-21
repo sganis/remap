@@ -27,7 +27,7 @@ env_logger = "0.11"
 dotenv = "0.15"
 regex = "1"
 minifb = "0.28"
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.5", features = ["derive", "env"] }
 
 # Linux-only deps (server capture/injection; not pulled on macOS/Windows)
 [target.'cfg(target_os = "linux")'.dependencies]
