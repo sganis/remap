@@ -27,8 +27,11 @@ env_logger = "0.11"
 dotenv = "0.15"
 regex = "1"
 minifb = "0.28"
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.5", features = ["derive", "env"] }
+ctrlc = { version = "3.4.7", features = ["termination"] }
+shell-words = "1.1.0"
 
 # Linux-only deps (server capture/injection; not pulled on macOS/Windows)
 [target.'cfg(target_os = "linux")'.dependencies]
-xcb = { version = "1.2.0", features = ["damage", "xfixes", "xtest"] }
+xcb = { version = "1.6.0", features = ["damage", "xfixes", "xtest"] }
+x11rb = { version = "0.13", features = ["xtest"] }
