@@ -1,6 +1,5 @@
-pub mod canvas;
 pub mod util;
-
+pub mod canvas;
 use anyhow::Result;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Read, Write};
@@ -29,7 +28,7 @@ pub enum ClientEvent {
 
 impl Message for ClientEvent {
     fn read_from<R: Read>(reader: &mut R) -> Result<ClientEvent> {
-        let message_type = match reader.read_u8() { Err(_) => return anyhow::bail!("Disconnected"), Ok(mt) => mt };
+        let message_type = match reader.read_u8() { Err(_) => anyhow::bail!("Disconnected"), Ok(mt) => mt };
         match message_type {
             2 => { reader.read_exact(&mut [0u8; 1])?;
                    let count = reader.read_u16::<BigEndian>()?;
@@ -95,7 +94,7 @@ pub enum ServerEvent {
 
 impl Message for ServerEvent {
     fn read_from<R: Read>(reader: &mut R) -> Result<ServerEvent> {
-        let message_type = match reader.read_u8() { Err(_) => return anyhow::bail!("Disconnected"), Ok(mt) => mt };
+        let message_type = match reader.read_u8() { Err(_) => anyhow::bail!("Disconnected"), Ok(mt) => mt };
         match message_type {
             0 => {
                 reader.read_exact(&mut [0u8; 1])?;
