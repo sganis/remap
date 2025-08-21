@@ -1,10 +1,9 @@
 #![allow(unused)]
 pub mod util;
 pub mod canvas;
-#[cfg(unix)]
+#[cfg(target_os="linux")]
 pub mod capture;
-
-#[cfg(unix)]
+#[cfg(target_os="linux")]
 pub mod input;
 
 use std::io::{Read, Write};

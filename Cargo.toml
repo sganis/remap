@@ -1,28 +1,18 @@
-[package]
-name = "remap"
-version = "0.1.0"
+[workspace]
+members = ["protocol", "client", "server"]
+resolver = "2"
+
+[workspace.package]
 edition = "2021"
+version = "0.1.0"
 
-[dependencies]
-clap = {version = "4.1.4", features=['derive']}
-ctrlc = "3.2.4"
-byteorder = "1.4.3"
-image = "0.24.5"
-minifb = "0.23.0"
-dotenv = "0.15.0"
-# winit = "0.28.1"
-# softbuffer = {git = "https://github.com/rust-windowing/softbuffer" }
-anyhow = "1.0.69"
-flume = "0.10.14"
-log = "0.4.17"
-env_logger = "0.10.0"
-regex = "1.7.1"
-
-[target.'cfg(windows)'.dependencies]
-
-[target.'cfg(unix)'.dependencies]
-enigo = { git = "https://github.com/sganis/enigo" }
-xcb = { version = "1.2.0", features = ["damage"] }
-
-
-
+[workspace.dependencies]
+anyhow = "1"
+byteorder = "1.5"
+flume = "0.11"
+log = "0.4"
+env_logger = "0.11"
+dotenv = "0.15"
+clap = { version = "4.1.4", features = ["derive"] }
+image = "0.25"
+regex = "1"
