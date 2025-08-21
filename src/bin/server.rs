@@ -15,10 +15,17 @@ mod linux_impl {
 
     use remap::{ClientEvent, Message, Rec, ServerEvent};
 
-    /// Remap server (Linux only)
     #[derive(Parser, Debug)]
     #[command(author, version, about = "Remap server (Linux only)", long_about = None)]
     struct ServerArgs {
+        /// SSH user (default from REMAP_USER)
+        #[arg(long, env = "REMAP_USER", default_value = "user")]
+        user: String,
+
+        /// SSH host (default from REMAP_HOST)
+        #[arg(long, env = "REMAP_HOST", default_value = "127.0.0.1")]
+        host: String,
+
         /// Bind address
         #[arg(short, long, default_value = "127.0.0.1")]
         bind: String,
