@@ -11,6 +11,18 @@ const BTN_RIGHT:      u8 = 0x04;
 const BTN_WHEEL_UP:   u8 = 0x08;
 const BTN_WHEEL_DOWN: u8 = 0x10;
 
+// ---- Virtual key bytes for non-ASCII keys (shared idea with server) ----
+const VK_HOME:      u8 = 0xE0;
+const VK_END:       u8 = 0xE1;
+const VK_INSERT:    u8 = 0xE2;
+const VK_PGUP:      u8 = 0xE3;
+const VK_PGDN:      u8 = 0xE4;
+const VK_LEFT:      u8 = 0xE5;
+const VK_RIGHT:     u8 = 0xE6;
+const VK_UP:        u8 = 0xE7;
+const VK_DOWN:      u8 = 0xE8;
+// (Delete remains 0x7F == 127)
+
 pub struct Canvas {
     window: Window,
     buffer: Vec<u32>,
@@ -133,23 +145,15 @@ impl Canvas {
         }
 
         // ---- Keyboard ----
-
-        // Build a fresh mods bitmask each frame
         let mods = current_mods(&self.window);
-        //debug!("mods=0x{:x}", mods);
 
-        // Non-modifier keys with current modifiers
         for key in self.window.get_keys_pressed(minifb::KeyRepeat::No) {
-            if is_modifier(key) { continue; }
             if let Some(byte) = map_key_to_byte(key) {
                 debug!("key down: {:?} byte={} mods=0x{:x}", key, byte, mods);
                 let _ = self.client_tx.send(ClientEvent::KeyEvent { down: true,  key: byte, mods });
-            } else {
-                debug!("key down: {:?} (unmapped)", key);
             }
         }
         for key in self.window.get_keys_released() {
-            if is_modifier(key) { continue; }
             if let Some(byte) = map_key_to_byte(key) {
                 let _ = self.client_tx.send(ClientEvent::KeyEvent { down: false, key: byte, mods });
             }
@@ -197,57 +201,38 @@ fn current_mods(window: &Window) -> u16 {
     m
 }
 
-fn is_modifier(key: Key) -> bool {
-    use Key::*;
-    matches!(key,
-        LeftShift | RightShift | LeftCtrl | RightCtrl |
-        LeftAlt   | RightAlt   | LeftSuper| RightSuper
-    )
-}
-
-/// Map a non-modifier `minifb::Key` to a single ASCII-like byte (unshifted base).
-/// Shift/Ctrl/Alt/Meta are carried separately via `mods`.
-/// NOTE: Navigation (Home/End/Arrows/PageUp/Down), Insert, and F-keys cannot be
-/// represented in this 1-byte scheme. To support them, evolve the protocol to
-/// send a keysym (u32) instead of `u8`.
+/// Map a minifb::Key to a single byte for the protocol.
+/// Letters/digits/punctuation use their unshifted ASCII byte.
+/// Navigation and arrows use VK_* in 0xE0..0xE8.
+/// Modifiers are *not* sent as standalone events; they’re in the mods bitmask.
 fn map_key_to_byte(key: Key) -> Option<u8> {
     use Key::*;
-    match key {
+    Some(match key {
         // letters -> lowercase ASCII base
-        A=>Some(b'a'), B=>Some(b'b'), C=>Some(b'c'), D=>Some(b'd'), E=>Some(b'e'),
-        F=>Some(b'f'), G=>Some(b'g'), H=>Some(b'h'), I=>Some(b'i'), J=>Some(b'j'),
-        K=>Some(b'k'), L=>Some(b'l'), M=>Some(b'm'), N=>Some(b'n'), O=>Some(b'o'),
-        P=>Some(b'p'), Q=>Some(b'q'), R=>Some(b'r'), S=>Some(b's'), T=>Some(b't'),
-        U=>Some(b'u'), V=>Some(b'v'), W=>Some(b'w'), X=>Some(b'x'), Y=>Some(b'y'),
-        Z=>Some(b'z'),
+        A=>b'a', B=>b'b', C=>b'c', D=>b'd', E=>b'e', F=>b'f', G=>b'g', H=>b'h', I=>b'i',
+        J=>b'j', K=>b'k', L=>b'l', M=>b'm', N=>b'n', O=>b'o', P=>b'p', Q=>b'q', R=>b'r',
+        S=>b's', T=>b't', U=>b'u', V=>b'v', W=>b'w', X=>b'x', Y=>b'y', Z=>b'z',
 
         // digits (unshifted)
-        Key0=>Some(b'0'), Key1=>Some(b'1'), Key2=>Some(b'2'), Key3=>Some(b'3'),
-        Key4=>Some(b'4'), Key5=>Some(b'5'), Key6=>Some(b'6'), Key7=>Some(b'7'),
-        Key8=>Some(b'8'), Key9=>Some(b'9'),
+        Key0=>b'0', Key1=>b'1', Key2=>b'2', Key3=>b'3', Key4=>b'4',
+        Key5=>b'5', Key6=>b'6', Key7=>b'7', Key8=>b'8', Key9=>b'9',
 
         // punctuation (unshifted ASCII base)
-        Minus        => Some(b'-'),
-        Equal        => Some(b'='),
-        LeftBracket  => Some(b'['),
-        RightBracket => Some(b']'),
-        Backslash    => Some(b'\\'),
-        Semicolon    => Some(b';'),
-        Apostrophe   => Some(b'\''),
-        Comma        => Some(b','),
-        Period       => Some(b'.'),
-        Slash        => Some(b'/'),
-        // If present in your minifb: GraveAccent => Some(b'`'),
+        Minus=>b'-', Equal=>b'=', LeftBracket=>b'[', RightBracket=>b']', Backslash=>b'\\',
+        Semicolon=>b';', Apostrophe=>b'\'', Comma=>b',', Period=>b'.', Slash=>b'/',
 
         // controls / whitespace
-        Enter     => Some(13),   // CR
-        Tab       => Some(9),
-        Escape    => Some(27),
-        Space     => Some(32),
-        Backspace => Some(8),
-        Delete    => Some(127),
+        Enter=>13, Tab=>9, Escape=>27, Space=>32, Backspace=>8, Delete=>127,
 
-        // everything else (arrows, Home/End, etc.) is not representable
-        _ => None,
-    }
+        // navigation + arrows -> VK_* range
+        Home=>VK_HOME, End=>VK_END, Insert=>VK_INSERT, PageUp=>VK_PGUP, PageDown=>VK_PGDN,
+        Left=>VK_LEFT, Right=>VK_RIGHT, Up=>VK_UP, Down=>VK_DOWN,
+
+        // ignore pure modifiers and unsupported keys (F-keys etc. not encoded in u8)
+        LeftShift | RightShift | LeftCtrl | RightCtrl | LeftAlt | RightAlt | LeftSuper | RightSuper
+        | F1 | F2 | F3 | F4 | F5 | F6 | F7 | F8 | F9 | F10 | F11 | F12
+        => return None,
+
+        _ => return None,
+    })
 }
