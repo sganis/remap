@@ -132,7 +132,6 @@ impl ClientEvent {
                 Ok(ClientEvent::SetEncodings(encodings))
             }
             3 => {
-                // FramebufferUpdateRequest
                 let incremental = read_u8(reader).await? != 0;
                 let x = read_u16_be(reader).await?;
                 let y = read_u16_be(reader).await?;
@@ -141,27 +140,23 @@ impl ClientEvent {
                 Ok(ClientEvent::FramebufferUpdateRequest { incremental, x, y, width, height })
             }
             4 => {
-                // KeyEvent
                 let down = read_u8(reader).await? != 0;
                 let mods = read_u16_be(reader).await?;
                 let key = read_u8(reader).await?;
                 Ok(ClientEvent::KeyEvent { down, key, mods })
             }
             5 => {
-                // PointerEvent
                 let buttons = read_u8(reader).await?;
                 let x = read_u16_be(reader).await?;
                 let y = read_u16_be(reader).await?;
                 Ok(ClientEvent::PointerEvent { buttons, x, y })
             }
             6 => {
-                // CutText
                 let mut pad = [0u8; 3];
                 reader.read_exact(&mut pad).await?;
                 Ok(ClientEvent::CutText(read_string_be(reader).await?))
             }
             7 => {
-                // ClientResize
                 let width = read_u16_be(reader).await?;
                 let height = read_u16_be(reader).await?;
                 Ok(ClientEvent::ClientResize { width, height })
@@ -223,7 +218,7 @@ impl ClientEvent {
 #[derive(Debug)]
 pub enum ServerEvent {
     FramebufferUpdate { count: u16, rectangles: Vec<Rec> },
-    SetColorMapEntries { first: u16, colors: Vec<(u16, u16, u16)> }, // optional; safe to ignore client-side
+    SetColorMapEntries { first: u16, colors: Vec<(u16, u16, u16)> },
     Bell,
     CutText(String),
 }
@@ -236,7 +231,9 @@ impl ServerEvent {
         let message_type = read_u8(reader).await?;
         match message_type {
             0 => {
-                // FramebufferUpdate (NO padding byte)
+                // FramebufferUpdate — 1-BYTE PAD
+                let mut pad = [0u8; 1];
+                reader.read_exact(&mut pad).await?;
                 let count = read_u16_be(reader).await?;
                 let mut rectangles = Vec::with_capacity(count as usize);
                 for _ in 0..count {
@@ -245,7 +242,7 @@ impl ServerEvent {
                 Ok(ServerEvent::FramebufferUpdate { count, rectangles })
             }
             1 => {
-                // SetColorMapEntries (RFB-style): 1 pad, then first, n, then n*(r,g,b)
+                // SetColorMapEntries — 1-BYTE PAD
                 let mut pad = [0u8; 1];
                 reader.read_exact(&mut pad).await?;
                 let first = read_u16_be(reader).await?;
@@ -261,7 +258,9 @@ impl ServerEvent {
             }
             2 => Ok(ServerEvent::Bell),
             3 => {
-                // ServerCutText (NO 3-byte pad; your server doesn’t send this anyway)
+                // ServerCutText — 3-BYTE PAD
+                let mut pad3 = [0u8; 3];
+                reader.read_exact(&mut pad3).await?;
                 let text = read_string_be(reader).await?;
                 Ok(ServerEvent::CutText(text))
             }
@@ -276,7 +275,7 @@ impl ServerEvent {
         match self {
             ServerEvent::FramebufferUpdate { count, rectangles } => {
                 write_u8(writer, 0).await?;
-                // NO padding
+                writer.write_all(&[0u8; 1]).await?; // pad
                 write_u16_be(writer, *count).await?;
                 for r in rectangles {
                     r.write(writer).await?;
@@ -284,7 +283,7 @@ impl ServerEvent {
             }
             ServerEvent::SetColorMapEntries { first, colors } => {
                 write_u8(writer, 1).await?;
-                writer.write_all(&[0u8; 1]).await?; // 1-byte pad per RFB
+                writer.write_all(&[0u8; 1]).await?; // pad
                 write_u16_be(writer, *first).await?;
                 write_u16_be(writer, colors.len() as u16).await?;
                 for (r, g, b) in colors {
@@ -298,7 +297,7 @@ impl ServerEvent {
             }
             ServerEvent::CutText(text) => {
                 write_u8(writer, 3).await?;
-                // NO 3-byte pad
+                writer.write_all(&[0u8; 3]).await?; // pad
                 write_string_be(writer, text).await?;
             }
         }
