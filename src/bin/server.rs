@@ -225,12 +225,12 @@ mod linux_impl {
                     }
                     ClientEvent::KeyEvent { down, key } => {
                         let action = if down { "down" } else { "up" };
-                        info!("key {}: {}", action, key);
+                        debug!("key {}: {}", action, key);
                         if down { input.key_down(key); } else { input.key_up(key); }
                     }
                     ClientEvent::PointerEvent { buttons, x, y } => {
                         let action = if buttons > 0 { "pressed" } else { "released" };
-                        info!("pointer {}: {}, ({},{})", action, buttons, x, y);
+                        debug!("pointer {}: {}, ({},{})", action, buttons, x, y);
                         // (Add button->click mapping in Input if desired)
                     }
                     other => {
