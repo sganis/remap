@@ -161,7 +161,7 @@ impl ClientEvent {
                 let height = read_u16_be(reader).await?;
                 Ok(ClientEvent::ClientResize { width, height })
             }
-            _ => anyhow::bail!("client to server message type"),
+            _ => anyhow::bail!("unsupported client to server message type: {}", message_type),
         }
     }
 
