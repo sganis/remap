@@ -28,7 +28,7 @@ dotenv = "0.15"
 regex = "1"
 minifb = "0.28"
 clap = { version = "4.5", features = ["derive", "env"] }
-
+tokio = { version = "1.0", features = ["full"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 xcb = { version = "1.6.0", features = ["damage", "xfixes", "xtest"] }

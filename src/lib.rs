@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 pub mod util;
 pub mod canvas;
 
@@ -8,8 +10,9 @@ pub mod capture;
 pub mod input;
 
 use anyhow::Result;
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-use std::io::{Read, Write};
+use tokio::io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _};
+
+/* ============================== Core Types ============================== */
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Geometry {
@@ -23,172 +26,292 @@ pub const MOD_CTRL:  u16 = 0x0002;
 pub const MOD_ALT:   u16 = 0x0004; // Option on macOS
 pub const MOD_META:  u16 = 0x0008; // Super/Command/Windows
 
-pub trait Message {
-    fn read_from<R: Read>(reader: &mut R) -> Result<Self>
-    where
-        Self: Sized;
-    fn write_to<W: Write>(&self, writer: &mut W) -> Result<()>;
+/* ========================= Async BE helpers ============================ */
+
+async fn read_u8<R: AsyncRead + Unpin>(r: &mut R) -> Result<u8> {
+    let mut b = [0u8; 1];
+    r.read_exact(&mut b).await?;
+    Ok(b[0])
+}
+async fn read_u16_be<R: AsyncRead + Unpin>(r: &mut R) -> Result<u16> {
+    let mut b = [0u8; 2];
+    r.read_exact(&mut b).await?;
+    Ok(u16::from_be_bytes(b))
+}
+async fn read_u32_be<R: AsyncRead + Unpin>(r: &mut R) -> Result<u32> {
+    let mut b = [0u8; 4];
+    r.read_exact(&mut b).await?;
+    Ok(u32::from_be_bytes(b))
+}
+async fn read_i32_be<R: AsyncRead + Unpin>(r: &mut R) -> Result<i32> {
+    Ok(read_u32_be(r).await? as i32)
+}
+async fn write_u8<W: AsyncWrite + Unpin>(w: &mut W, v: u8) -> Result<()> {
+    w.write_all(&[v]).await?;
+    Ok(())
+}
+async fn write_u16_be<W: AsyncWrite + Unpin>(w: &mut W, v: u16) -> Result<()> {
+    w.write_all(&v.to_be_bytes()).await?;
+    Ok(())
+}
+async fn write_u32_be<W: AsyncWrite + Unpin>(w: &mut W, v: u32) -> Result<()> {
+    w.write_all(&v.to_be_bytes()).await?;
+    Ok(())
+}
+async fn write_i32_be<W: AsyncWrite + Unpin>(w: &mut W, v: i32) -> Result<()> {
+    write_u32_be(w, v as u32).await
 }
 
-/* ===== Client → Server ===== */
+/* --- length-prefixed bytes & strings --- */
+async fn read_vec_be<R: AsyncRead + Unpin>(r: &mut R) -> Result<Vec<u8>> {
+    let len = read_u32_be(r).await? as usize;
+    let mut buf = vec![0u8; len];
+    r.read_exact(&mut buf).await?;
+    Ok(buf)
+}
+async fn write_vec_be<W: AsyncWrite + Unpin>(w: &mut W, v: &[u8]) -> Result<()> {
+    write_u32_be(w, v.len() as u32).await?;
+    w.write_all(v).await?;
+    Ok(())
+}
+async fn read_string_be<R: AsyncRead + Unpin>(r: &mut R) -> Result<String> {
+    let bytes = read_vec_be(r).await?;
+    Ok(String::from_utf8(bytes).unwrap_or_else(|e| {
+        e.into_bytes().into_iter().map(|c| c as char).collect()
+    }))
+}
+async fn write_string_be<W: AsyncWrite + Unpin>(w: &mut W, s: &str) -> Result<()> {
+    write_vec_be(w, s.as_bytes()).await
+}
+
+/* ========================= Client → Server ============================== */
+
 #[derive(Debug)]
 pub enum ClientEvent {
     SetEncodings(Vec<Encoding>),
-    FramebufferUpdateRequest { incremental: bool, x: u16, y: u16, width: u16, height: u16 },
-    KeyEvent { down: bool, key: u8, mods: u16 },
-    PointerEvent { buttons: u8, x: u16, y: u16 },
+    FramebufferUpdateRequest {
+        incremental: bool,
+        x: u16,
+        y: u16,
+        width: u16,
+        height: u16,
+    },
+    KeyEvent {
+        down: bool,
+        key: u8,
+        mods: u16,
+    },
+    PointerEvent {
+        buttons: u8,
+        x: u16,
+        y: u16,
+    },
     CutText(String),
-    ClientResize { width: u16, height: u16 }, // <- NEW
+    ClientResize {
+        width: u16,
+        height: u16,
+    },
 }
 
-impl Message for ClientEvent {
-    fn read_from<R: Read>(reader: &mut R) -> Result<ClientEvent> {
-        let message_type = match reader.read_u8() {
-            Err(_) => anyhow::bail!("Disconnected"),
-            Ok(mt) => mt,
-        };
+impl ClientEvent {
+    pub async fn read<R>(reader: &mut R) -> Result<Self>
+    where
+        R: AsyncRead + Unpin,
+    {
+        let message_type = read_u8(reader).await?;
         match message_type {
             2 => {
-                reader.read_exact(&mut [0u8; 1])?;
-                let count = reader.read_u16::<BigEndian>()?;
+                // SetEncodings
+                let mut pad = [0u8; 1];
+                reader.read_exact(&mut pad).await?;
+                let count = read_u16_be(reader).await?;
                 let mut encodings = Vec::with_capacity(count as usize);
                 for _ in 0..count {
-                    encodings.push(Encoding::read_from(reader)?);
+                    encodings.push(Encoding::read(reader).await?);
                 }
                 Ok(ClientEvent::SetEncodings(encodings))
             }
-            3 => Ok(ClientEvent::FramebufferUpdateRequest {
-                incremental: reader.read_u8()? != 0,
-                x: reader.read_u16::<BigEndian>()?,
-                y: reader.read_u16::<BigEndian>()?,
-                width: reader.read_u16::<BigEndian>()?,
-                height: reader.read_u16::<BigEndian>()?,
-            }),
+            3 => {
+                // FramebufferUpdateRequest
+                let incremental = read_u8(reader).await? != 0;
+                let x = read_u16_be(reader).await?;
+                let y = read_u16_be(reader).await?;
+                let width = read_u16_be(reader).await?;
+                let height = read_u16_be(reader).await?;
+                Ok(ClientEvent::FramebufferUpdateRequest { incremental, x, y, width, height })
+            }
             4 => {
-                let down = reader.read_u8()? != 0;
-                let mods = reader.read_u16::<BigEndian>()?; // << store mods (no padding)
-                let key = reader.read_u8()?;
+                // KeyEvent
+                let down = read_u8(reader).await? != 0;
+                let mods = read_u16_be(reader).await?;
+                let key = read_u8(reader).await?;
                 Ok(ClientEvent::KeyEvent { down, key, mods })
             }
-            5 => Ok(ClientEvent::PointerEvent {
-                buttons: reader.read_u8()?,
-                x: reader.read_u16::<BigEndian>()?,
-                y: reader.read_u16::<BigEndian>()?,
-            }),
+            5 => {
+                // PointerEvent
+                let buttons = read_u8(reader).await?;
+                let x = read_u16_be(reader).await?;
+                let y = read_u16_be(reader).await?;
+                Ok(ClientEvent::PointerEvent { buttons, x, y })
+            }
             6 => {
-                reader.read_exact(&mut [0u8; 3])?;
-                Ok(ClientEvent::CutText(String::read_from(reader)?))
+                // CutText
+                let mut pad = [0u8; 3];
+                reader.read_exact(&mut pad).await?;
+                Ok(ClientEvent::CutText(read_string_be(reader).await?))
             }
             7 => {
-                // ClientResize { width, height }
-                let width = reader.read_u16::<BigEndian>()?;
-                let height = reader.read_u16::<BigEndian>()?;
+                // ClientResize
+                let width = read_u16_be(reader).await?;
+                let height = read_u16_be(reader).await?;
                 Ok(ClientEvent::ClientResize { width, height })
             }
             _ => anyhow::bail!("client to server message type"),
         }
     }
-    fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
+
+    pub async fn write<W>(&self, writer: &mut W) -> Result<()>
+    where
+        W: AsyncWrite + Unpin,
+    {
         match self {
             ClientEvent::SetEncodings(encodings) => {
-                writer.write_u8(2)?;
-                writer.write_all(&[0u8; 1])?;
-                writer.write_u16::<BigEndian>(encodings.len() as u16)?;
+                write_u8(writer, 2).await?;
+                writer.write_all(&[0u8; 1]).await?;
+                write_u16_be(writer, encodings.len() as u16).await?;
                 for e in encodings {
-                    e.write_to(writer)?;
+                    e.write(writer).await?;
                 }
             }
             ClientEvent::FramebufferUpdateRequest { incremental, x, y, width, height } => {
-                writer.write_u8(3)?;
-                writer.write_u8(if *incremental { 1 } else { 0 })?;
-                writer.write_u16::<BigEndian>(*x)?;
-                writer.write_u16::<BigEndian>(*y)?;
-                writer.write_u16::<BigEndian>(*width)?;
-                writer.write_u16::<BigEndian>(*height)?;
+                write_u8(writer, 3).await?;
+                write_u8(writer, if *incremental { 1 } else { 0 }).await?;
+                write_u16_be(writer, *x).await?;
+                write_u16_be(writer, *y).await?;
+                write_u16_be(writer, *width).await?;
+                write_u16_be(writer, *height).await?;
             }
             ClientEvent::KeyEvent { down, key, mods } => {
-                writer.write_u8(4)?;
-                writer.write_u8(if *down { 1 } else { 0 })?;
-                writer.write_u16::<BigEndian>(*mods)?; // << write mods
-                writer.write_u8(*key)?;
+                write_u8(writer, 4).await?;
+                write_u8(writer, if *down { 1 } else { 0 }).await?;
+                write_u16_be(writer, *mods).await?;
+                write_u8(writer, *key).await?;
             }
             ClientEvent::PointerEvent { buttons, x, y } => {
-                writer.write_u8(5)?;
-                writer.write_u8(*buttons)?;
-                writer.write_u16::<BigEndian>(*x)?;
-                writer.write_u16::<BigEndian>(*y)?;
+                write_u8(writer, 5).await?;
+                write_u8(writer, *buttons).await?;
+                write_u16_be(writer, *x).await?;
+                write_u16_be(writer, *y).await?;
             }
             ClientEvent::CutText(text) => {
-                writer.write_u8(6)?;
-                writer.write_all(&[0u8; 3])?;
-                text.write_to(writer)?;
+                write_u8(writer, 6).await?;
+                writer.write_all(&[0u8; 3]).await?;
+                write_string_be(writer, text).await?;
             }
             ClientEvent::ClientResize { width, height } => {
-                writer.write_u8(7)?;
-                writer.write_u16::<BigEndian>(*width)?;
-                writer.write_u16::<BigEndian>(*height)?;
+                write_u8(writer, 7).await?;
+                write_u16_be(writer, *width).await?;
+                write_u16_be(writer, *height).await?;
             }
         }
         Ok(())
     }
 }
 
-/* ===== Server → Client ===== */
+/* ========================= Server → Client ============================== */
+
 #[derive(Debug)]
 pub enum ServerEvent {
     FramebufferUpdate { count: u16, rectangles: Vec<Rec> },
+    SetColorMapEntries { first: u16, colors: Vec<(u16, u16, u16)> }, // <-- NEW
     Bell,
     CutText(String),
 }
 
-impl Message for ServerEvent {
-    fn read_from<R: Read>(reader: &mut R) -> Result<ServerEvent> {
-        let message_type = match reader.read_u8() {
-            Err(_) => anyhow::bail!("Disconnected"),
-            Ok(mt) => mt,
-        };
+impl ServerEvent {
+    pub async fn read<R>(reader: &mut R) -> Result<Self>
+    where
+        R: AsyncRead + Unpin,
+    {
+        let message_type = read_u8(reader).await?;
         match message_type {
             0 => {
-                reader.read_exact(&mut [0u8; 1])?;
-                let count = reader.read_u16::<BigEndian>()?;
+                // FramebufferUpdate
+                let mut pad = [0u8; 1];
+                reader.read_exact(&mut pad).await?;
+                let count = read_u16_be(reader).await?;
                 let mut rectangles = Vec::with_capacity(count as usize);
                 for _ in 0..count {
-                    rectangles.push(Rec::read_from(reader)?);
+                    rectangles.push(Rec::read(reader).await?);
                 }
                 Ok(ServerEvent::FramebufferUpdate { count, rectangles })
             }
+            1 => {
+                // SetColorMapEntries (RFB): pad, firstColour, nColours, then n*(r,g,b)
+                let mut pad = [0u8; 1];
+                reader.read_exact(&mut pad).await?;
+                let first = read_u16_be(reader).await?;
+                let n = read_u16_be(reader).await?;
+                let mut colors = Vec::with_capacity(n as usize);
+                for _ in 0..n {
+                    let r = read_u16_be(reader).await?;
+                    let g = read_u16_be(reader).await?;
+                    let b = read_u16_be(reader).await?;
+                    colors.push((r, g, b));
+                }
+                Ok(ServerEvent::SetColorMapEntries { first, colors })
+            }
             2 => Ok(ServerEvent::Bell),
             3 => {
-                reader.read_exact(&mut [0u8; 3])?;
-                Ok(ServerEvent::CutText(String::read_from(reader)?))
+                // CutText
+                let mut pad = [0u8; 3];
+                reader.read_exact(&mut pad).await?;
+                Ok(ServerEvent::CutText(read_string_be(reader).await?))
             }
             _ => anyhow::bail!("server to client message type"),
         }
     }
-    fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
+
+    pub async fn write<W>(&self, writer: &mut W) -> Result<()>
+    where
+        W: AsyncWrite + Unpin,
+    {
         match self {
             ServerEvent::FramebufferUpdate { count, rectangles } => {
-                writer.write_u8(0)?;
-                writer.write_all(&[0u8; 1])?;
-                writer.write_u16::<BigEndian>(*count)?;
+                write_u8(writer, 0).await?;
+                writer.write_all(&[0u8; 1]).await?;
+                write_u16_be(writer, *count).await?;
                 for r in rectangles {
-                    r.write_to(writer)?;
+                    r.write(writer).await?;
+                }
+            }
+            ServerEvent::SetColorMapEntries { first, colors } => {
+                // Not commonly sent by client, but implement for completeness.
+                write_u8(writer, 1).await?;
+                writer.write_all(&[0u8; 1]).await?;
+                write_u16_be(writer, *first).await?;
+                write_u16_be(writer, colors.len() as u16).await?;
+                for (r, g, b) in colors {
+                    write_u16_be(writer, *r).await?;
+                    write_u16_be(writer, *g).await?;
+                    write_u16_be(writer, *b).await?;
                 }
             }
             ServerEvent::Bell => {
-                writer.write_u8(2)?;
+                write_u8(writer, 2).await?;
             }
             ServerEvent::CutText(text) => {
-                writer.write_u8(3)?;
-                writer.write_all(&[0u8; 3])?;
-                text.write_to(writer)?;
+                write_u8(writer, 3).await?;
+                writer.write_all(&[0u8; 3]).await?;
+                write_string_be(writer, text).await?;
             }
         }
         Ok(())
     }
 }
 
-/* ===== Raw pixel rectangles ===== */
+/* ========================= Raw pixel rectangles ========================= */
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Rec {
     pub x: u16,
@@ -198,66 +321,52 @@ pub struct Rec {
     pub bytes: Vec<u8>,
 }
 
-impl Message for Rec {
-    fn read_from<R: Read>(reader: &mut R) -> Result<Rec> {
-        Ok(Rec {
-            x: reader.read_u16::<BigEndian>()?,
-            y: reader.read_u16::<BigEndian>()?,
-            width: reader.read_u16::<BigEndian>()?,
-            height: reader.read_u16::<BigEndian>()?,
-            bytes: Vec::<u8>::read_from(reader)?,
-        })
+impl Rec {
+    pub async fn read<R>(reader: &mut R) -> Result<Self>
+    where
+        R: AsyncRead + Unpin,
+    {
+        let x = read_u16_be(reader).await?;
+        let y = read_u16_be(reader).await?;
+        let width = read_u16_be(reader).await?;
+        let height = read_u16_be(reader).await?;
+        let bytes = read_vec_be(reader).await?;
+        Ok(Rec { x, y, width, height, bytes })
     }
-    fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
-        writer.write_u16::<BigEndian>(self.x)?;
-        writer.write_u16::<BigEndian>(self.y)?;
-        writer.write_u16::<BigEndian>(self.width)?;
-        writer.write_u16::<BigEndian>(self.height)?;
-        self.bytes.write_to(writer)?;
+
+    pub async fn write<W>(&self, writer: &mut W) -> Result<()>
+    where
+        W: AsyncWrite + Unpin,
+    {
+        write_u16_be(writer, self.x).await?;
+        write_u16_be(writer, self.y).await?;
+        write_u16_be(writer, self.width).await?;
+        write_u16_be(writer, self.height).await?;
+        write_vec_be(writer, &self.bytes).await?;
         Ok(())
     }
 }
 
-/* ===== Vec<u8> / String helpers ===== */
-impl Message for Vec<u8> {
-    fn read_from<R: Read>(reader: &mut R) -> Result<Vec<u8>> {
-        let length = reader.read_u32::<BigEndian>()?;
-        let mut buffer = vec![0; length as usize];
-        reader.read_exact(&mut buffer)?;
-        Ok(buffer)
-    }
-    fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
-        writer.write_u32::<BigEndian>(self.len() as u32)?;
-        writer.write_all(self)?;
-        Ok(())
-    }
-}
+/* ============================== Encodings ============================== */
 
-impl Message for String {
-    fn read_from<R: Read>(reader: &mut R) -> Result<String> {
-        let length = reader.read_u32::<BigEndian>()?;
-        let mut bytes = vec![0; length as usize];
-        reader.read_exact(&mut bytes)?;
-        Ok(bytes.into_iter().map(|c| c as char).collect())
-    }
-    fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
-        let bytes: Vec<u8> = self.chars().map(|c| c as u8).collect();
-        writer.write_u32::<BigEndian>(bytes.len() as u32)?;
-        writer.write_all(&bytes)?;
-        Ok(())
-    }
-}
-
-/* ===== Encodings ===== */
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Encoding {
     Unknown(i32),
-    Raw, CopyRect, Rre, Hextile, Zrle, Cursor, DesktopSize,
+    Raw,
+    CopyRect,
+    Rre,
+    Hextile,
+    Zrle,
+    Cursor,
+    DesktopSize,
 }
 
-impl Message for Encoding {
-    fn read_from<R: Read>(reader: &mut R) -> Result<Encoding> {
-        let encoding = reader.read_i32::<BigEndian>()?;
+impl Encoding {
+    pub async fn read<R>(reader: &mut R) -> Result<Self>
+    where
+        R: AsyncRead + Unpin,
+    {
+        let encoding = read_i32_be(reader).await?;
         Ok(match encoding {
             0 => Encoding::Raw,
             1 => Encoding::CopyRect,
@@ -269,7 +378,11 @@ impl Message for Encoding {
             n => Encoding::Unknown(n),
         })
     }
-    fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
+
+    pub async fn write<W>(&self, writer: &mut W) -> Result<()>
+    where
+        W: AsyncWrite + Unpin,
+    {
         let n = match self {
             Encoding::Raw => 0,
             Encoding::CopyRect => 1,
@@ -280,7 +393,6 @@ impl Message for Encoding {
             Encoding::DesktopSize => -223,
             Encoding::Unknown(n) => *n,
         };
-        writer.write_i32::<BigEndian>(n)?;
-        Ok(())
+        write_i32_be(writer, n).await
     }
 }

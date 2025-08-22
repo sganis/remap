@@ -1,26 +1,27 @@
-use flume::{Receiver, Sender};
 use anyhow::Result;
 use log::debug;
-use minifb::{MouseButton, MouseMode, ScaleMode, Window, WindowOptions, Key};
-use crate::{Rec, ClientEvent, ServerEvent, MOD_SHIFT, MOD_CTRL, MOD_ALT, MOD_META};
+use minifb::{Key, MouseButton, MouseMode, ScaleMode, Window, WindowOptions};
+use tokio::sync::mpsc::{Receiver, Sender};
+
+use crate::{ClientEvent, Rec, ServerEvent, MOD_ALT, MOD_CTRL, MOD_META, MOD_SHIFT};
 
 // pointer bit masks
-const BTN_LEFT:       u8 = 0x01;
-const BTN_MIDDLE:     u8 = 0x02;
-const BTN_RIGHT:      u8 = 0x04;
-const BTN_WHEEL_UP:   u8 = 0x08;
+const BTN_LEFT: u8 = 0x01;
+const BTN_MIDDLE: u8 = 0x02;
+const BTN_RIGHT: u8 = 0x04;
+const BTN_WHEEL_UP: u8 = 0x08;
 const BTN_WHEEL_DOWN: u8 = 0x10;
 
 // ---- Virtual key bytes for non-ASCII keys (must match server) ----
-const VK_HOME:   u8 = 0xE0;
-const VK_END:    u8 = 0xE1;
+const VK_HOME: u8 = 0xE0;
+const VK_END: u8 = 0xE1;
 const VK_INSERT: u8 = 0xE2;
-const VK_PGUP:   u8 = 0xE3;
-const VK_PGDN:   u8 = 0xE4;
-const VK_LEFT:   u8 = 0xE5;
-const VK_RIGHT:  u8 = 0xE6;
-const VK_UP:     u8 = 0xE7;
-const VK_DOWN:   u8 = 0xE8;
+const VK_PGUP: u8 = 0xE3;
+const VK_PGDN: u8 = 0xE4;
+const VK_LEFT: u8 = 0xE5;
+const VK_RIGHT: u8 = 0xE6;
+const VK_UP: u8 = 0xE7;
+const VK_DOWN: u8 = 0xE8;
 
 pub struct Canvas {
     window: Window,
@@ -34,11 +35,11 @@ pub struct Canvas {
     client_rx: Receiver<ServerEvent>,
     buttons: u8,
     need_update: bool,
-    last_mouse: Option<(u16,u16)>,
+    last_mouse: Option<(u16, u16)>,
 }
 
 impl Canvas {
-    pub fn new(client_tx: Sender<ClientEvent>, client_rx: Receiver<ServerEvent>) -> Result<Self> {
+    pub async fn new(client_tx: Sender<ClientEvent>, client_rx: Receiver<ServerEvent>) -> Result<Self> {
         // Resizable window; buffer will scale with aspect ratio preserved.
         let mut window = Window::new(
             "Remap",
@@ -46,11 +47,12 @@ impl Canvas {
             800,
             WindowOptions {
                 resize: true,
-                //scale_mode: ScaleMode::AspectRatioStretch, // keep aspect ratio (letterbox)
-                scale_mode: ScaleMode::Stretch, // keep aspect ratio (letterbox)
+                // scale_mode: ScaleMode::AspectRatioStretch, // keep aspect ratio (letterbox)
+                scale_mode: ScaleMode::Stretch,
                 ..WindowOptions::default()
             },
-        ).expect("Unable to create window");
+        )
+        .expect("Unable to create window");
         window.set_target_fps(60);
 
         Ok(Self {
@@ -68,7 +70,7 @@ impl Canvas {
 
     /// Set the framebuffer size to match the remote display/app geometry.
     /// This recreates the window to that size (for a crisp default view) but does NOT notify server.
-    pub fn resize(&mut self, width: u32, height: u32) -> Result<(u32,u32)> {
+    pub async fn resize(&mut self, width: u32, height: u32) -> Result<(u32, u32)> {
         self.fb_w = width.max(1);
         self.fb_h = height.max(1);
         self.buffer.resize((self.fb_w * self.fb_h) as usize, 0);
@@ -80,11 +82,12 @@ impl Canvas {
             self.fb_h as usize,
             WindowOptions {
                 resize: true,
-                //scale_mode: ScaleMode::AspectRatioStretch,
+                // scale_mode: ScaleMode::AspectRatioStretch,
                 scale_mode: ScaleMode::Stretch,
                 ..WindowOptions::default()
             },
-        ).expect("Unable to create window");
+        )
+        .expect("Unable to create window");
         window.set_target_fps(60);
         self.window = window;
 
@@ -92,10 +95,14 @@ impl Canvas {
         Ok((self.fb_w, self.fb_h))
     }
 
-    pub fn is_open(&self) -> bool { self.window.is_open() }
+    pub fn is_open(&self) -> bool {
+        self.window.is_open()
+    }
 
-    pub fn draw(&mut self, rec: &Rec) -> Result<()> {
-        if self.buffer.is_empty() || rec.width == 0 || rec.height == 0 { return Ok(()); }
+    pub async fn draw(&mut self, rec: &Rec) -> Result<()> {
+        if self.buffer.is_empty() || rec.width == 0 || rec.height == 0 {
+            return Ok(());
+        }
 
         // If the server ever sends larger rects (e.g., it resized), expand our framebuffer.
         let need_w = (rec.x as u32 + rec.width as u32).max(self.fb_w);
@@ -121,7 +128,9 @@ impl Canvas {
         let y1 = (ry + rh).max(0).min(fb_h);
         let cw = (x1 - x0).max(0) as usize;
         let ch = (y1 - y0).max(0) as usize;
-        if cw == 0 || ch == 0 { return Ok(()); }
+        if cw == 0 || ch == 0 {
+            return Ok(());
+        }
 
         let src_stride = rec.width as usize * 4;
         let src_x_off = (x0 - rx).max(0) as usize;
@@ -132,13 +141,15 @@ impl Canvas {
             let src_row_start = (src_y_off + row) * src_stride + src_x_off * 4;
             let dst_row_start = (y0 as usize + row) * dst_stride + x0 as usize;
 
-            let src = &rec.bytes[src_row_start .. src_row_start + cw * 4];
-            let dst = &mut self.buffer[dst_row_start .. dst_row_start + cw];
+            let src = &rec.bytes[src_row_start..src_row_start + cw * 4];
+            let dst = &mut self.buffer[dst_row_start..dst_row_start + cw];
 
             let mut s = 0;
             for px in dst.iter_mut() {
-                let b = src[s] as u32; let g = src[s+1] as u32; let r = src[s+2] as u32;
-                *px = (r) | (g << 8) | (b << 16);
+                let b = src[s] as u32;
+                let g = src[s + 1] as u32;
+                let r = src[s + 2] as u32;
+                *px = r | (g << 8) | (b << 16);
                 s += 4;
             }
         }
@@ -146,7 +157,7 @@ impl Canvas {
         Ok(())
     }
 
-    pub fn update(&mut self) -> Result<()> {
+    pub async fn update(&mut self) -> Result<()> {
         if self.need_update {
             // Always push using framebuffer dimensions; minifb scales to the current window
             self.window
@@ -159,35 +170,129 @@ impl Canvas {
         Ok(())
     }
 
-    pub fn handle_input(&mut self) -> Result<()> {
+    pub async fn handle_input(&mut self) -> Result<()> {
         if let Some((xf, yf)) = self.window.get_mouse_pos(MouseMode::Discard) {
             let (x, y) = (xf as u16, yf as u16);
 
             if self.last_mouse.map(|p| p != (x, y)).unwrap_or(true) {
-                self.client_tx.send(ClientEvent::PointerEvent { buttons: self.buttons, x, y })?;
+                self.client_tx
+                    .send(ClientEvent::PointerEvent {
+                        buttons: self.buttons,
+                        x,
+                        y,
+                    })
+                    .await
+                    .ok();
                 self.last_mouse = Some((x, y));
             }
 
             // Buttons
             if self.window.get_mouse_down(MouseButton::Left) {
-                if self.buttons & BTN_LEFT == 0 { self.buttons |= BTN_LEFT; self.client_tx.send(ClientEvent::PointerEvent { buttons: self.buttons, x, y })?; }
-            } else if self.buttons & BTN_LEFT != 0 { self.buttons &= !BTN_LEFT; self.client_tx.send(ClientEvent::PointerEvent { buttons: self.buttons, x, y })?; }
+                if self.buttons & BTN_LEFT == 0 {
+                    self.buttons |= BTN_LEFT;
+                    let _ = self
+                        .client_tx
+                        .send(ClientEvent::PointerEvent {
+                            buttons: self.buttons,
+                            x,
+                            y,
+                        })
+                        .await;
+                }
+            } else if self.buttons & BTN_LEFT != 0 {
+                self.buttons &= !BTN_LEFT;
+                let _ = self
+                    .client_tx
+                    .send(ClientEvent::PointerEvent {
+                        buttons: self.buttons,
+                        x,
+                        y,
+                    })
+                    .await;
+            }
 
             if self.window.get_mouse_down(MouseButton::Middle) {
-                if self.buttons & BTN_MIDDLE == 0 { self.buttons |= BTN_MIDDLE; self.client_tx.send(ClientEvent::PointerEvent { buttons: self.buttons, x, y })?; }
-            } else if self.buttons & BTN_MIDDLE != 0 { self.buttons &= !BTN_MIDDLE; self.client_tx.send(ClientEvent::PointerEvent { buttons: self.buttons, x, y })?; }
+                if self.buttons & BTN_MIDDLE == 0 {
+                    self.buttons |= BTN_MIDDLE;
+                    let _ = self
+                        .client_tx
+                        .send(ClientEvent::PointerEvent {
+                            buttons: self.buttons,
+                            x,
+                            y,
+                        })
+                        .await;
+                }
+            } else if self.buttons & BTN_MIDDLE != 0 {
+                self.buttons &= !BTN_MIDDLE;
+                let _ = self
+                    .client_tx
+                    .send(ClientEvent::PointerEvent {
+                        buttons: self.buttons,
+                        x,
+                        y,
+                    })
+                    .await;
+            }
 
             if self.window.get_mouse_down(MouseButton::Right) {
-                if self.buttons & BTN_RIGHT == 0 { self.buttons |= BTN_RIGHT; self.client_tx.send(ClientEvent::PointerEvent { buttons: self.buttons, x, y })?; }
-            } else if self.buttons & BTN_RIGHT != 0 { self.buttons &= !BTN_RIGHT; self.client_tx.send(ClientEvent::PointerEvent { buttons: self.buttons, x, y })?; }
+                if self.buttons & BTN_RIGHT == 0 {
+                    self.buttons |= BTN_RIGHT;
+                    let _ = self
+                        .client_tx
+                        .send(ClientEvent::PointerEvent {
+                            buttons: self.buttons,
+                            x,
+                            y,
+                        })
+                        .await;
+                }
+            } else if self.buttons & BTN_RIGHT != 0 {
+                self.buttons &= !BTN_RIGHT;
+                let _ = self
+                    .client_tx
+                    .send(ClientEvent::PointerEvent {
+                        buttons: self.buttons,
+                        x,
+                        y,
+                    })
+                    .await;
+            }
 
             // Scroll (emit multiple pulses for large wheel deltas)
             if let Some((_sx, sy)) = self.window.get_scroll_wheel() {
                 let mut pulses = sy;
-                while pulses >= 1.0 { self.client_tx.send(ClientEvent::PointerEvent { buttons: BTN_WHEEL_UP, x, y })?; pulses -= 1.0; }
-                while pulses <= -1.0 { self.client_tx.send(ClientEvent::PointerEvent { buttons: BTN_WHEEL_DOWN, x, y })?; pulses += 1.0; }
+                while pulses >= 1.0 {
+                    let _ = self
+                        .client_tx
+                        .send(ClientEvent::PointerEvent {
+                            buttons: BTN_WHEEL_UP,
+                            x,
+                            y,
+                        })
+                        .await;
+                    pulses -= 1.0;
+                }
+                while pulses <= -1.0 {
+                    let _ = self
+                        .client_tx
+                        .send(ClientEvent::PointerEvent {
+                            buttons: BTN_WHEEL_DOWN,
+                            x,
+                            y,
+                        })
+                        .await;
+                    pulses += 1.0;
+                }
                 if sy != 0.0 {
-                    self.client_tx.send(ClientEvent::PointerEvent { buttons: self.buttons, x, y })?;
+                    let _ = self
+                        .client_tx
+                        .send(ClientEvent::PointerEvent {
+                            buttons: self.buttons,
+                            x,
+                            y,
+                        })
+                        .await;
                 }
             }
         }
@@ -198,25 +303,41 @@ impl Canvas {
         for key in self.window.get_keys_pressed(minifb::KeyRepeat::No) {
             if let Some(byte) = map_key_to_byte(key) {
                 debug!("key down: {:?} byte={} mods=0x{:x}", key, byte, mods);
-                let _ = self.client_tx.send(ClientEvent::KeyEvent { down: true,  key: byte, mods });
+                let _ = self
+                    .client_tx
+                    .send(ClientEvent::KeyEvent {
+                        down: true,
+                        key: byte,
+                        mods,
+                    })
+                    .await;
             }
         }
         for key in self.window.get_keys_released() {
             if let Some(byte) = map_key_to_byte(key) {
-                let _ = self.client_tx.send(ClientEvent::KeyEvent { down: false, key: byte, mods });
+                let _ = self
+                    .client_tx
+                    .send(ClientEvent::KeyEvent {
+                        down: false,
+                        key: byte,
+                        mods,
+                    })
+                    .await;
             }
         }
 
         Ok(())
     }
 
-    pub fn handle_server_events(&mut self) -> Result<()> {
+    pub async fn handle_server_events(&mut self) -> Result<()> {
         let mut any = false;
         while let Ok(reply) = self.client_rx.try_recv() {
             match reply {
                 ServerEvent::FramebufferUpdate { count, rectangles } => {
                     if count > 0 {
-                        for rec in &rectangles { self.draw(rec)?; }
+                        for rec in &rectangles {
+                            self.draw(rec).await?;
+                        }
                         any = true;
                     }
                 }
@@ -230,25 +351,56 @@ impl Canvas {
     }
 
     /// Ask server for more pixels (optional depending on your flow)
-    pub fn request_update(&mut self, incremental: bool) -> Result<()> {
-        self.client_tx.send(ClientEvent::FramebufferUpdateRequest {
+    pub async fn request_update(&mut self, incremental: bool) -> Result<()> {
+        let ev = ClientEvent::FramebufferUpdateRequest {
             incremental,
-            x: 0, y: 0,
+            x: 0,
+            y: 0,
             width: self.fb_w.min(u16::MAX as u32) as u16,
             height: self.fb_h.min(u16::MAX as u32) as u16,
-        })?;
+        };
+        self.client_tx.send(ev).await.ok();
         Ok(())
     }
+    
+    /// Close the UI gracefully. Consumes `self` so the minifb window is dropped
+    /// immediately (that’s what actually closes the OS window).
+    pub async fn close(mut self) -> Result<()> {
+        // Best-effort: release any pressed buttons at the last mouse position
+        if let Some((x, y)) = self.last_mouse {
+            let _ = self.client_tx.send(ClientEvent::PointerEvent {
+                buttons: 0,
+                x,
+                y,
+            }).await;
+        }
+
+        // Drain any pending server messages so we don't leave backpressure behind.
+        while self.client_rx.try_recv().is_ok() {}
+
+        // When this function returns, `self` (and thus `self.window`) is dropped,
+        // which closes the minifb window. Nothing else to do.
+        Ok(())
+    }
+
 }
 
 /* ===== helpers ===== */
 
 fn current_mods(window: &Window) -> u16 {
     let mut m = 0;
-    if window.is_key_down(Key::LeftShift)  || window.is_key_down(Key::RightShift)  { m |= MOD_SHIFT; }
-    if window.is_key_down(Key::LeftCtrl)   || window.is_key_down(Key::RightCtrl)   { m |= MOD_CTRL;  }
-    if window.is_key_down(Key::LeftAlt)    || window.is_key_down(Key::RightAlt)    { m |= MOD_ALT;   }
-    if window.is_key_down(Key::LeftSuper)  || window.is_key_down(Key::RightSuper)  { m |= MOD_META;  }
+    if window.is_key_down(Key::LeftShift) || window.is_key_down(Key::RightShift) {
+        m |= MOD_SHIFT;
+    }
+    if window.is_key_down(Key::LeftCtrl) || window.is_key_down(Key::RightCtrl) {
+        m |= MOD_CTRL;
+    }
+    if window.is_key_down(Key::LeftAlt) || window.is_key_down(Key::RightAlt) {
+        m |= MOD_ALT;
+    }
+    if window.is_key_down(Key::LeftSuper) || window.is_key_down(Key::RightSuper) {
+        m |= MOD_META;
+    }
     m
 }
 
@@ -257,29 +409,97 @@ fn map_key_to_byte(key: Key) -> Option<u8> {
     use Key::*;
     Some(match key {
         // letters -> lowercase ASCII base
-        A=>b'a', B=>b'b', C=>b'c', D=>b'd', E=>b'e', F=>b'f', G=>b'g', H=>b'h', I=>b'i',
-        J=>b'j', K=>b'k', L=>b'l', M=>b'm', N=>b'n', O=>b'o', P=>b'p', Q=>b'q', R=>b'r',
-        S=>b's', T=>b't', U=>b'u', V=>b'v', W=>b'w', X=>b'x', Y=>b'y', Z=>b'z',
+        A => b'a',
+        B => b'b',
+        C => b'c',
+        D => b'd',
+        E => b'e',
+        F => b'f',
+        G => b'g',
+        H => b'h',
+        I => b'i',
+        J => b'j',
+        K => b'k',
+        L => b'l',
+        M => b'm',
+        N => b'n',
+        O => b'o',
+        P => b'p',
+        Q => b'q',
+        R => b'r',
+        S => b's',
+        T => b't',
+        U => b'u',
+        V => b'v',
+        W => b'w',
+        X => b'x',
+        Y => b'y',
+        Z => b'z',
 
         // digits (unshifted)
-        Key0=>b'0', Key1=>b'1', Key2=>b'2', Key3=>b'3', Key4=>b'4',
-        Key5=>b'5', Key6=>b'6', Key7=>b'7', Key8=>b'8', Key9=>b'9',
+        Key0 => b'0',
+        Key1 => b'1',
+        Key2 => b'2',
+        Key3 => b'3',
+        Key4 => b'4',
+        Key5 => b'5',
+        Key6 => b'6',
+        Key7 => b'7',
+        Key8 => b'8',
+        Key9 => b'9',
 
         // punctuation (unshifted ASCII base)
-        Minus=>b'-', Equal=>b'=', LeftBracket=>b'[', RightBracket=>b']', Backslash=>b'\\',
-        Semicolon=>b';', Apostrophe=>b'\'', Comma=>b',', Period=>b'.', Slash=>b'/',
+        Minus => b'-',
+        Equal => b'=',
+        LeftBracket => b'[',
+        RightBracket => b']',
+        Backslash => b'\\',
+        Semicolon => b';',
+        Apostrophe => b'\'',
+        Comma => b',',
+        Period => b'.',
+        Slash => b'/',
 
         // controls / whitespace
-        Enter=>13, Tab=>9, Escape=>27, Space=>32, Backspace=>8, Delete=>127,
+        Enter => 13,
+        Tab => 9,
+        Escape => 27,
+        Space => 32,
+        Backspace => 8,
+        Delete => 127,
 
         // navigation + arrows -> VK_* range
-        Home=>VK_HOME, End=>VK_END, Insert=>VK_INSERT, PageUp=>VK_PGUP, PageDown=>VK_PGDN,
-        Left=>VK_LEFT, Right=>VK_RIGHT, Up=>VK_UP, Down=>VK_DOWN,
+        Home => VK_HOME,
+        End => VK_END,
+        Insert => VK_INSERT,
+        PageUp => VK_PGUP,
+        PageDown => VK_PGDN,
+        Left => VK_LEFT,
+        Right => VK_RIGHT,
+        Up => VK_UP,
+        Down => VK_DOWN,
 
         // ignore pure modifiers and F-keys here
-        LeftShift | RightShift | LeftCtrl | RightCtrl | LeftAlt | RightAlt | LeftSuper | RightSuper
-        | F1 | F2 | F3 | F4 | F5 | F6 | F7 | F8 | F9 | F10 | F11 | F12
-        => return None,
+        LeftShift
+        | RightShift
+        | LeftCtrl
+        | RightCtrl
+        | LeftAlt
+        | RightAlt
+        | LeftSuper
+        | RightSuper
+        | F1
+        | F2
+        | F3
+        | F4
+        | F5
+        | F6
+        | F7
+        | F8
+        | F9
+        | F10
+        | F11
+        | F12 => return None,
 
         _ => return None,
     })

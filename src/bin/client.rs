@@ -1,120 +1,184 @@
-use std::net::TcpStream;
-use std::process::{Command, Stdio};
-use std::time::Duration;
-use anyhow::{Context, Result};
-use byteorder::{BigEndian, ReadBytesExt};
-use log::{info, warn};
-use remap::{ClientEvent, ServerEvent};
+use std::process::Command;
+//use std::time::Instant;
+use std::sync::mpsc;
+use anyhow::Result;
 use remap::canvas::Canvas;
-use remap::Message;
+use remap::util;
+use remap::{ClientEvent, ServerEvent};
+use tokio::{
+    io::{self, AsyncRead, AsyncReadExt, AsyncWrite},
+    sync::mpsc::{Receiver, Sender}, 
+    net::TcpStream,
+};
 
-// helper: wait until a TCP connect to addr works (up to timeout)
-fn wait_tcp(addr: &str, total_ms: u64) -> bool {
-    let start = std::time::Instant::now();
-    while start.elapsed() < Duration::from_millis(total_ms) {
-        if TcpStream::connect(addr).is_ok() { return true; }
-        std::thread::sleep(Duration::from_millis(120));
-    }
-    false
+pub struct Client<T>
+where
+    T: AsyncRead + AsyncWrite + Unpin,
+{
+    stream: T,
+    width: u16,
+    height: u16,
 }
 
-pub fn main() -> Result<()> {
-    dotenv::dotenv().ok();
-    env_logger::init();
-
-    let user = std::env::var("REMAP_USER").context("REMAP_USER missing")?;
-    let host = std::env::var("REMAP_HOST").context("REMAP_HOST missing")?;
-    let port: u16 = 10100;               // consider picking a free one
-    
-    // If something already binds local_port, fail fast instead of assuming it's our tunnel.
-    if TcpStream::connect(("127.0.0.1", port)).is_ok() {
-        warn!("Local port {} already accepts connections; not starting SSH (might be the wrong process).", port);
+impl<T> Client<T>
+where
+    T: AsyncRead + AsyncWrite + Unpin,
+{
+    pub fn new(stream: T, width: u16, height: u16) -> Self {
+        Self { stream, width, height }
     }
 
-    // Start SSH tunnel, keep child handle so we can clean it up.
-    let mut child = Command::new("ssh")
-        .args([
-            "-N", "-T",
-            "-o", "BatchMode=yes",
-            "-o", "ExitOnForwardFailure=yes",
-            // dev-only hardening/telemetry options:
-            "-o", "ServerAliveInterval=30",
-            "-o", "ServerAliveCountMax=3",
-            // For production, keep StrictHostKeyChecking=accept-new or yes:
-            "-o", "StrictHostKeyChecking=no",
-            "-L",
-            &format!("{port}:127.0.0.1:{port}"),
-            &format!("{user}@{host}"),
-        ])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::inherit())   // inherit stderr so you can see SSH errors
-        .spawn()
-        .context("failed to spawn ssh tunnel")?;
+    /// Drives the protocol:
+    /// - sends initial full-frame request
+    /// - forwards Canvas input (ClientEvent) -> server
+    /// - forwards server replies (ServerEvent) -> Canvas
+    pub async fn run(
+        &mut self,
+        client_tx: Sender<ServerEvent>,
+        mut canvas_rx: Receiver<ClientEvent>,
+    ) -> Result<()> {
+        // Split the stream so reads and writes can proceed concurrently.
+        // This borrows `self.stream` for the duration of the loop.
+        let (mut reader, mut writer) = tokio::io::split(&mut self.stream);
 
-    // Wait until the tunnel truly accepts connects (up to ~5s)
-    let local_addr = format!("127.0.0.1:{port}");
-    if !wait_tcp(&local_addr, 5000) {
-        // Try to reap SSH; if it already exited, its status will tell you why.
-        let _ = child.try_wait();
-        anyhow::bail!("SSH tunnel did not become ready on {}", local_addr);
+        // Initial full framebuffer request
+        let init = ClientEvent::FramebufferUpdateRequest {
+            incremental: false,
+            x: 0,
+            y: 0,
+            width: self.width,
+            height: self.height,
+        };
+        init.write(&mut writer).await?;
+
+        loop {
+            tokio::select! {
+                // Canvas → Server (write outbound client events)
+                maybe_evt = canvas_rx.recv() => {
+                    match maybe_evt {
+                        Some(evt) => {
+                            evt.write(&mut writer).await?;
+                        }
+                        None => {
+                            // Canvas dropped the sender: graceful shutdown.
+                            break;
+                        }
+                    }
+                }
+
+                // Server → Canvas (read inbound server events)
+                srv = ServerEvent::read(&mut reader) => {
+                    match srv {
+                        Ok(msg) => {
+                            // Forward to Canvas; if Canvas is gone, we can exit.
+                            if client_tx.send(msg).await.is_err() {
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            
+                            // I/O error or EOF
+                            // Treat UnexpectedEof as clean disconnect; others bubble up.
+                            if let Some(ioe) = e.downcast_ref::<io::Error>() {
+                                if ioe.kind() == io::ErrorKind::UnexpectedEof {
+                                    break;
+                                }
+                            }
+                            return Err(e);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
-    info!("Tunnel ready on {local_addr}");
+}
 
-    // Connect application stream
-    let stream = TcpStream::connect(&local_addr).context("connect to tunnel failed")?;
-    stream.set_nodelay(true).ok();
-    stream.set_read_timeout(Some(Duration::from_secs(10))).ok();
-    stream.set_write_timeout(Some(Duration::from_secs(10))).ok();
 
-    // Split into reader/writer clones
-    let mut reader = stream.try_clone()?;
-    let writer = stream; // keep original as writer
+#[tokio::main]
+async fn main() -> Result<()> {
+    dotenv::dotenv().expect(".env file missing");
 
-    // Read initial header (use the same handle consistently)
-    let width  = reader.read_u16::<BigEndian>()?;
-    let height = reader.read_u16::<BigEndian>()?;
-    info!("Server geometry: {}x{}", width, height);
+    let user = std::env::var("REMAP_USER").expect("REMAP_USER env var missing");
+    let host = std::env::var("REMAP_HOST").expect("REMAP_HOST env var missing");
+    let port: u16 = 10100;
 
-    let (client_tx, client_rx) = flume::unbounded::<ServerEvent>();
-    let (canvas_tx, canvas_rx) = flume::unbounded::<ClientEvent>();
+    // ---- SSH tunnel (same pattern you like) ----
+    let (tx, rx) = mpsc::channel();
 
-    // writer thread
-    let mut w = writer;
     std::thread::spawn(move || {
-        while let Ok(evt) = canvas_rx.recv() {
-            if evt.write_to(&mut w).is_err() { break; }
+        if util::port_is_listening(port) {
+            println!("Tunnel exists, reusing...");
+            tx.send(()).expect("Could not send signal on channel.");
+        } else {
+            println!("Connecting...");
+            let _handle = Command::new("ssh")
+                .args([
+                    "-oStrictHostkeyChecking=no",
+                    "-N",
+                    "-L",
+                    &format!("{port}:127.0.0.1:{port}"),
+                    &format!("{user}@{host}"),
+                ])
+                .spawn()
+                .expect("failed to spawn ssh");
+            while !util::port_is_listening(port) {
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
+            tx.send(()).expect("Could not send signal on channel.");
         }
     });
 
-    // reader thread
-    let mut r = reader;
-    std::thread::spawn(move || {
-        while let Ok(reply) = ServerEvent::read_from(&mut r) {
-            let _ = client_tx.send(reply);
+    // wait for tunnel
+    rx.recv().expect("Could not receive from channel.");
+    println!("Tunnel Ok.");
+
+    // ---- Async TCP connection ----
+    let mut stream = TcpStream::connect(&format!("127.0.0.1:{port}")).await?;
+    println!("Connected");
+
+    // Read geometry header: 2×u16 (big-endian)
+    let mut hdr = [0u8; 4];
+    stream.read_exact(&mut hdr).await?;
+    let width = u16::from_be_bytes([hdr[0], hdr[1]]);
+    let height = u16::from_be_bytes([hdr[2], hdr[3]]);
+    println!("Geometry: {}x{}", width, height);
+
+    // ---- Channels (Tokio mpsc) ----
+    let (canvas_tx, canvas_rx) = tokio::sync::mpsc::channel(100);
+    let (client_tx, client_rx) = tokio::sync::mpsc::channel(100);
+
+    // ---- Network client task (owns the stream) ----
+    let mut client = Client::new(stream, width, height);
+    tokio::spawn(async move {
+        if let Err(e) = client.run(client_tx, canvas_rx).await {
+            eprintln!("client error: {e}");
         }
-        info!("Server disconnected");
     });
 
-    // UI loop
-    info!("Connecting to server at 127.0.0.1:{}", port);
-    let mut canvas = Canvas::new(canvas_tx, client_rx)?;
-    canvas.resize(width as u32, height as u32)?;
-    canvas.request_update(false)?;
+    // ---- Canvas/UI loop (async) ----
+    let mut canvas = Canvas::new(canvas_tx, client_rx).await?;
+    canvas.resize(width as u32, height as u32).await?;
+
+    //let mut frames = 0_u32;
+    //let mut start = Instant::now();
 
     while canvas.is_open() {
-        canvas.handle_input()?;
-        canvas.handle_server_events()?;
-        canvas.update()?;
+        canvas.handle_input().await?;
+        canvas.handle_server_events().await?;
+        canvas.update().await?;
+        canvas.request_update(true).await?;
+
+        // frames += 1;
+        // if start.elapsed().as_secs() >= 1 {
+        //     let fps = frames as f64 / start.elapsed().as_millis() as f64 * 1000.0;
+        //     println!("{fps:.0}");
+        //     start = Instant::now();
+        //     frames = 0;
+        // }
     }
 
-    // Cleanly terminate the ssh tunnel
-    // (If you want to keep it, omit this.)
-    #[allow(unused_must_use)]
-    {
-        child.kill();
-        child.wait();
-    }
-
+    canvas.close().await?;
     Ok(())
 }
