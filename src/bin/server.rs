@@ -1,149 +1,244 @@
-//! Linux-only Remap server: responds to client FramebufferUpdateRequest with a moving gradient.
-//! On non-Linux platforms, it prints a message and exits.
+//! Remap server (Linux-only): start Xvfb, launch the app (xterm by default),
+//! capture rectangles via remap::capture::Capture and send to client,
+//! handle input via remap::input::Input, and clean up on Ctrl+C.
 
 use anyhow::Result;
+use remap::input::Input;
 
 #[cfg(target_os = "linux")]
 mod linux_impl {
     use super::*;
     use clap::Parser;
-    use log::{info, warn};
+    use log::{debug, info, trace};
     use std::io::Write;
     use std::net::TcpListener;
-    use std::thread;
-    use std::time::{Duration, Instant};
+    use std::process::Command;
+    use std::time::Instant;
 
-    use remap::{ClientEvent, Message, Rec, ServerEvent};
+    use remap::{util, ClientEvent, Message, Rec, ServerEvent};
+    use remap::capture::Capture;
 
+    /// Remap server (Linux only)
     #[derive(Parser, Debug)]
     #[command(author, version, about = "Remap server (Linux only)", long_about = None)]
     struct ServerArgs {
-        /// SSH user (default from REMAP_USER)
-        #[arg(long, env = "REMAP_USER", default_value = "user")]
-        user: String,
+        /// X display number (e.g. 100 -> :100). Default: 100
+        #[arg(short, long, default_value_t = 100)]
+        display: u32,
 
-        /// SSH host (default from REMAP_HOST)
-        #[arg(long, env = "REMAP_HOST", default_value = "127.0.0.1")]
-        host: String,
+        /// App (and args) to run; default: xterm -fa 'Monospace' -fs 14 -geometry 110x24
+        #[arg(short, long, default_value = "xterm -fa 'Monospace' -fs 14 -geometry 110x24")]
+        app: String,
 
-        /// Bind address
-        #[arg(short, long, default_value = "127.0.0.1")]
-        bind: String,
-
-        /// Port to listen on
+        /// TCP port to listen on. Default: 10100
         #[arg(short, long, default_value_t = 10100)]
         port: u16,
 
-        /// Reported framebuffer width
-        #[arg(long, default_value_t = 1280)]
-        width: u16,
-
-        /// Reported framebuffer height
-        #[arg(long, default_value_t = 800)]
-        height: u16,
-
-        /// Max FPS (when the client requests frames rapidly)
-        #[arg(long, default_value_t = 60)]
-        fps: u32,
+        /// Increase verbosity (-v, -vv, -vvv)
+        #[arg(short, long, action = clap::ArgAction::Count)]
+        verbose: u8,
     }
 
     pub fn main_linux() -> Result<()> {
         dotenv::dotenv().ok();
+        //env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
         env_logger::init();
+        
 
         let args = ServerArgs::parse();
-        let listener = TcpListener::bind((args.bind.as_str(), args.port))?;
-        info!("Remap server listening on {}:{}", args.bind, args.port);
-        info!("Announcing geometry {}x{}, max {} FPS", args.width, args.height, args.fps);
+        let display = args.display;
+        let port = args.port;
 
-        let frame_interval = Duration::from_secs_f64(1.0 / args.fps as f64);
+        // Parse command + args (allow quoted args in the default)
+        let mut parts = shell_words::split(&args.app)
+            .unwrap_or_else(|_| args.app.split_whitespace().map(|s| s.to_string()).collect());
+        let app = parts.get(0).cloned().unwrap_or_else(|| "xterm".to_string());
+        let app_args = if parts.len() > 1 { &parts[1..] } else { &[] };
+
+        let desktop = app == "desktop"; // if you ever want a headless "desktop" mode
+
+        info!("Display: :{}", display);
+        info!("App: {}", app);
+        info!("Args: {:?}", app_args);
+        info!("Port: {}", port);
+        info!("Verbosity: {}", args.verbose);
+
+        if !desktop {
+            std::env::set_var("DISPLAY", format!(":{display}"));
+        }
+
+        // Keep child handles here so Ctrl+C can kill them.
+        let mut display_proc: Option<std::process::Child> = None;
+        let mut app_proc: Option<std::process::Child> = None;
+
+        // Start Xvfb if not desktop mode
+        if !desktop {
+            // Start Xvfb with a decent 24-bit screen (with alpha channel)
+            let p = Command::new("Xvfb")
+                .args([
+                    "+extension", "GLX",
+                    "+extension", "Composite",
+                    "-screen", "0", "2048x1024x24+32",
+                    "-nolisten", "tcp",
+                    "-noreset",
+                    "-dpi", "96",
+                    &format!(":{display}"),
+                ])
+                .spawn()
+                .expect("Failed to start Xvfb");
+            info!("Xvfb pid: {}", p.id());
+            display_proc = Some(p);
+
+            // Wait until Xvfb is up
+            while !util::is_display_server_running(display) {
+                info!("Waiting for Xvfb :{display}...");
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
+
+            // Launch the app
+            let p = Command::new(&app)
+                .args(app_args)
+                .spawn()
+                .expect("Failed to start app");
+            info!("App pid: {}", p.id());
+            app_proc = Some(p);
+        }
+
+        // Find the app's window and its geometry
+        let mut xid: i32 = 0;
+        let mut geometry = remap::Geometry::default();
+        if !desktop {
+            // Try to identify window by pid+name (like your original)
+            // We use the process we just spawned; if app_proc is None, keep xid=0
+            if let Some(ref p) = app_proc {
+                let pid = p.id();
+                xid = util::get_window_id(pid, &app, display);
+                while xid == 0 {
+                    info!("Waiting for window id...");
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                    xid = util::get_window_id(pid, &app, display);
+                }
+                info!("Window xid: {} ({:#06x})", xid, xid);
+                geometry = util::get_window_geometry(xid, display);
+                info!("Window geometry: {:?} (server)", geometry);
+            }
+        }
+
+        // On Ctrl+C: kill the child processes and exit
+        {
+            let mut app_proc = app_proc.take();
+            let mut display_proc = display_proc.take();
+            ctrlc::set_handler(move || {
+                if let Some(p) = &mut app_proc {
+                    let _ = p.kill();
+                    info!("App stopped.");
+                }
+                if let Some(p) = &mut display_proc {
+                    let _ = p.kill();
+                    info!("Display :{} stopped.", display);
+                }
+                std::process::exit(0);
+            })?;
+        }
+
+        // Listen for client connections
+        let addr = format!("127.0.0.1:{port}");
+        let listener = TcpListener::bind(&addr)?;
+        info!("Listening on {}", addr);
 
         loop {
             let (mut stream, peer) = listener.accept()?;
             info!("Client connected: {}", peer);
 
-            // Send geometry header (big-endian u16, u16)
-            stream.write_all(&args.width.to_be_bytes())?;
-            stream.write_all(&args.height.to_be_bytes())?;
+            // Channels for capture→writer pipeline and capture control
+            let (capture_tx, capture_rx) = flume::unbounded::<bool>();
+            let (writer_tx, writer_rx) = flume::unbounded::<Vec<Rec>>();
 
-            // Handle this client in a thread
-            let w = args.width;
-            let h = args.height;
-            let fi = frame_interval;
+            // Create a Capture (xid=0 means screen, non-zero means window)
+            let mut capture = Capture::new(xid.max(0) as u32);
+            let (width, height) = capture.get_geometry();
+            // Send initial geometry header
+            stream.write_all(&u16::try_from(width).unwrap_or(0).to_be_bytes())?;
+            stream.write_all(&u16::try_from(height).unwrap_or(0).to_be_bytes())?;
 
-            thread::spawn(move || -> Result<()> {
-                let mut tick: u32 = 0;
-                let mut last_frame = Instant::now();
-
+            // Spawn capture thread
+            std::thread::spawn(move || {
                 loop {
-                    // Wait for a client message (blocks)
-                    let req = match ClientEvent::read_from(&mut stream) {
-                        Ok(ev) => ev,
-                        Err(e) => {
-                            info!("Client disconnected ({e:#})");
+                    // Default to incremental=true unless a request arrives
+                    let mut incremental = true;
+                    while let Ok(inc) = capture_rx.try_recv() {
+                        trace!("capture_rx: set incremental={inc}");
+                        incremental = inc;
+                    }
+                    let t0 = Instant::now();
+                    let rects = capture.get_image(incremental);
+                    trace!("capture.get_image({incremental}) took {:?}", t0.elapsed());
+
+                    if !rects.is_empty() {
+                        debug!("capture produced {} rectangles -> writer", rects.len());
+                        if writer_tx.send(rects).is_err() {
                             break;
                         }
-                    };
-
-                    match req {
-                        ClientEvent::FramebufferUpdateRequest { incremental: _, x, y, width, height } => {
-                            // Simple FPS cap in case the client spams requests
-                            let elapsed = last_frame.elapsed();
-                            if elapsed < fi {
-                                thread::sleep(fi - elapsed);
-                            }
-                            last_frame = Instant::now();
-                            tick = tick.wrapping_add(1);
-
-                            // Generate the requested rectangle as a BGRA gradient
-                            let bytes = gen_gradient_bgra(width, height, tick);
-
-                            let rect = Rec { x, y, width, height, bytes };
-                            let reply = ServerEvent::FramebufferUpdate { count: 1, rectangles: vec![rect] };
-
-                            if let Err(e) = reply.write_to(&mut stream) {
-                                warn!("Write error, closing connection: {e:#}");
-                                break;
-                            }
-                        }
-                        ClientEvent::KeyEvent { down, key } => {
-                            info!("Key {:?} {}", key, if down { "down" } else { "up" });
-                        }
-                        ClientEvent::PointerEvent { buttons, x, y } => {
-                            info!("Pointer buttons={:#04x} at ({},{})", buttons, x, y);
-                        }
-                        ClientEvent::SetEncodings(_) => {
-                            // Not required for this demo; ignore.
-                        }
-                        ClientEvent::CutText(s) => {
-                            info!("CutText: {}", s);
-                        }
+                    } else {
+                        // Avoid busy-spin; sleep a tiny bit if nothing changed
+                        std::thread::sleep(std::time::Duration::from_millis(4));
                     }
                 }
-
-                Ok(())
             });
-        }
-    }
 
-    /// Generate a BGRA gradient for a `width` x `height` rectangle.
-    fn gen_gradient_bgra(width: u16, height: u16, tick: u32) -> Vec<u8> {
-        let w = width as usize;
-        let h = height as usize;
-        let mut bytes = vec![0u8; w * h * 4];
+            // Spawn writer thread (sends ServerEvent::FramebufferUpdate)
+            let writer_stream = stream.try_clone()?;
+            std::thread::spawn(move || {
+                let mut writer = writer_stream;
+                while let Ok(rects) = writer_rx.recv() {
+                    let evt = ServerEvent::FramebufferUpdate {
+                        count: rects.len() as u16,
+                        rectangles: rects,
+                    };
+                    if evt.write_to(&mut writer).is_err() {
+                        break;
+                    }
+                }
+            });
 
-        let t = (tick & 0xFF) as u8;
-        for y in 0..h {
-            for x in 0..w {
-                let idx = (y * w + x) * 4;
-                // B = x ^ t, G = y ^ t, R = (x+y) ^ t, A = 255
-                bytes[idx + 0] = (x as u8) ^ t;                  // B
-                bytes[idx + 1] = (y as u8) ^ t;                  // G
-                bytes[idx + 2] = ((x as u16 + y as u16) as u8) ^ t; // R
-                bytes[idx + 3] = 255;                            // A
+            // Set up input injection (optional if you compiled remap::input)
+            let mut input = Input::new();
+            if !desktop {
+                input.set_window(xid);
+                input.set_server_geometry(geometry);
+                input.focus();
+            }
+
+            // Handle client messages on this connection
+            loop {
+                let msg = match ClientEvent::read_from(&mut stream) {
+                    Ok(m) => m,
+                    Err(_) => {
+                        info!("Client disconnected");
+                        break;
+                    }
+                };
+
+                match msg {
+                    ClientEvent::FramebufferUpdateRequest { incremental, .. } => {
+                        let _ = capture_tx.send(incremental);
+                    }
+                    ClientEvent::KeyEvent { down, key } => {
+                        let action = if down { "down" } else { "up" };
+                        info!("key {}: {}", action, key);
+                        if down { input.key_down(key); } else { input.key_up(key); }
+                    }
+                    ClientEvent::PointerEvent { buttons, x, y } => {
+                        let action = if buttons > 0 { "pressed" } else { "released" };
+                        info!("pointer {}: {}, ({},{})", action, buttons, x, y);
+                        // (Add button->click mapping in Input if desired)
+                    }
+                    other => {
+                        debug!("Unhandled client event: {:?}", other);
+                    }
+                }
             }
         }
-        bytes
     }
 }
 
@@ -152,7 +247,6 @@ mod linux_impl {
     use super::*;
     use clap::Parser;
 
-    /// Stub to keep the binary friendly on non-Linux systems.
     #[derive(Parser, Debug)]
     #[command(author, version, about = "Remap server (Linux only)", long_about = None)]
     struct ServerArgs {}

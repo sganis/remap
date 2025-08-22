@@ -1,5 +1,12 @@
 pub mod util;
 pub mod canvas;
+
+#[cfg(target_os = "linux")]
+pub mod capture;
+
+#[cfg(target_os = "linux")]
+pub mod input;
+
 use anyhow::Result;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Read, Write};
