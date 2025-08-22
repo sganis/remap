@@ -1,4 +1,3 @@
-use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -63,14 +62,14 @@ pub fn main() -> Result<()> {
     println!("Tunnel ready on {local_addr}");
 
     // Connect application stream
-    let mut stream = TcpStream::connect(&local_addr).context("connect to tunnel failed")?;
+    let stream = TcpStream::connect(&local_addr).context("connect to tunnel failed")?;
     stream.set_nodelay(true).ok();
     stream.set_read_timeout(Some(Duration::from_secs(10))).ok();
     stream.set_write_timeout(Some(Duration::from_secs(10))).ok();
 
     // Split into reader/writer clones
     let mut reader = stream.try_clone()?;
-    let mut writer = stream; // keep original as writer
+    let writer = stream; // keep original as writer
 
     // Read initial header (use the same handle consistently)
     let width  = reader.read_u16::<BigEndian>()?;
@@ -81,7 +80,7 @@ pub fn main() -> Result<()> {
     let (canvas_tx, canvas_rx) = flume::unbounded::<ClientEvent>();
 
     // writer thread
-    let w = writer;
+    let mut w = writer;
     std::thread::spawn(move || {
         while let Ok(evt) = canvas_rx.recv() {
             if evt.write_to(&mut w).is_err() { break; }
@@ -89,7 +88,7 @@ pub fn main() -> Result<()> {
     });
 
     // reader thread
-    let r = reader;
+    let mut r = reader;
     std::thread::spawn(move || {
         while let Ok(reply) = ServerEvent::read_from(&mut r) {
             let _ = client_tx.send(reply);
