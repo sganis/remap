@@ -49,6 +49,7 @@ where
             width: self.width,
             height: self.height,
         };
+        println!("Client: sending initial full-frame request");
         init.write(&mut writer).await?;
 
         loop {
@@ -57,6 +58,7 @@ where
                 maybe_evt = canvas_rx.recv() => {
                     match maybe_evt {
                         Some(evt) => {
+                            println!("Client: sending event {:?}", evt);
                             evt.write(&mut writer).await?;
                         }
                         None => {
@@ -71,6 +73,7 @@ where
                     match srv {
                         Ok(msg) => {
                             // Forward to Canvas; if Canvas is gone, we can exit.
+                            println!("Client: received event {:?}", msg);
                             if client_tx.send(msg).await.is_err() {
                                 break;
                             }
