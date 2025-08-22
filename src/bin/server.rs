@@ -349,41 +349,41 @@ mod linux_impl {
                 info!("Window geometry: {:?} (server)", geometry);
 
                 // // Enlarge the app to the full Xvfb screen
-                // if xid != 0 {
-                //     if let Ok((sw, sh)) = util::screen_size(display) {
-                //         info!("Target Xvfb size: {}x{}", sw, sh);
+                if xid != 0 {
+                    if let Ok((sw, sh)) = util::screen_size(display) {
+                        info!("Target Xvfb size: {}x{}", sw, sh);
 
-                //         // 1) Politely ask any WM to maximize/fullscreen (EWMH). Harmless on Xvfb-without-WM.
-                //         if let Err(e) = util::maximize_window(display, xid as u32) {
-                //             debug!("maximize_window (EWMH) ignored/failed: {:?}", e);
-                //         }
-                //         std::thread::sleep(std::time::Duration::from_millis(120));
+                        // 1) Politely ask any WM to maximize/fullscreen (EWMH). Harmless on Xvfb-without-WM.
+                        if let Err(e) = util::maximize_window(display, xid as u32) {
+                            debug!("maximize_window (EWMH) ignored/failed: {:?}", e);
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(120));
 
-                //         // 2) Force move+resize (works even with no WM). Retry a few times in case the app
-                //         //    does an initial layout pass and resizes itself once after mapping.
-                //         for attempt in 1..=8 {
-                //             // Try move+resize to (0,0, sw, sh). Fall back to util::resize_window_to if you prefer.
-                //             let _ = util::force_move_resize(display, xid as u32, 0, 0, sw, sh)
-                //                 .or_else(|_| util::resize_window_to(display, xid as u32, sw, sh));
+                        // 2) Force move+resize (works even with no WM). Retry a few times in case the app
+                        //    does an initial layout pass and resizes itself once after mapping.
+                        for attempt in 1..=8 {
+                            // Try move+resize to (0,0, sw, sh). Fall back to util::resize_window_to if you prefer.
+                            let _ = util::force_move_resize(display, xid as u32, 0, 0, sw, sh)
+                                .or_else(|_| util::resize_window_to(display, xid as u32, sw, sh));
 
-                //             std::thread::sleep(std::time::Duration::from_millis(80));
+                            std::thread::sleep(std::time::Duration::from_millis(80));
 
-                //             let g = util::get_window_geometry(xid, display);
-                //             if g.width == sw as i32 && g.height == sh as i32 {
-                //                 info!("Window matched screen on attempt {}: {}x{}", attempt, g.width, g.height);
-                //                 break;
-                //             } else {
-                //                 debug!("still {}x{}, want {}x{} (attempt {})", g.width, g.height, sw, sh, attempt);
-                //             }
-                //         }
+                            let g = util::get_window_geometry(xid, display);
+                            if g.width == sw as i32 && g.height == sh as i32 {
+                                info!("Window matched screen on attempt {}: {}x{}", attempt, g.width, g.height);
+                                break;
+                            } else {
+                                debug!("still {}x{}, want {}x{} (attempt {})", g.width, g.height, sw, sh, attempt);
+                            }
+                        }
 
-                //         // 3) Re-read final geometry for logging
-                //         geometry = util::get_window_geometry(xid, display);
-                //         info!("Window geometry after maximize: {:?} (server)", geometry);
-                //     } else {
-                //         info!("Could not read screen size; skipping maximize");
-                //     }
-                // }
+                        // 3) Re-read final geometry for logging
+                        geometry = util::get_window_geometry(xid, display);
+                        info!("Window geometry after maximize: {:?} (server)", geometry);
+                    } else {
+                        info!("Could not read screen size; skipping maximize");
+                    }
+                }
             }
         }
 
@@ -418,8 +418,8 @@ mod linux_impl {
             let (writer_tx, writer_rx) = flume::unbounded::<Vec<Rec>>();
 
             // Create a Capture (xid=0 means screen, non-zero means window)
-            //let mut capture = Capture::new(xid.max(0) as u32);
-            let mut capture = Capture::new(0);
+            let mut capture = Capture::new(xid.max(0) as u32);
+            //let mut capture = Capture::new(0);
             let (width, height) = capture.get_geometry();
 
             // Send initial geometry header (u16 BE, twice)
