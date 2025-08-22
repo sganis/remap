@@ -1,4 +1,4 @@
-use anyhow::Result;
+//use anyhow::Result;
 use xcb::x::{Drawable, GetGeometry, GetImage, ImageFormat, Window};
 use xcb::{Connection, XidNew};
 
@@ -153,7 +153,7 @@ impl Capture {
     {
         const TILE: u16 = 64;
         let w = self.width as usize;
-        let h = self.height as usize;
+        let _h = self.height as usize;
         let stride = w * 4;
 
         let mut rects = Vec::new();

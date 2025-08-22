@@ -22,15 +22,15 @@ mod linux_impl {
     #[derive(Parser, Debug)]
     #[command(author, version, about = "Remap server (Linux only)", long_about = None)]
     struct ServerArgs {
-        /// X display number (e.g. 100 -> :100). Default: 100
+        /// X display number (e.g. 100 -> :100)
         #[arg(short, long, default_value_t = 100)]
         display: u32,
 
-        /// App (and args) to run; default: xterm -fa 'Monospace' -fs 14 -geometry 110x24
+        /// App (and args) to run
         #[arg(short, long, default_value = "xterm -fa 'Monospace' -fs 14 -geometry 110x24")]
         app: String,
 
-        /// TCP port to listen on. Default: 10100
+        /// TCP port to listen on
         #[arg(short, long, default_value_t = 10100)]
         port: u16,
 
@@ -113,8 +113,8 @@ mod linux_impl {
             if let Some(ref p) = app_proc {
                 let pid = p.id();
                 xid = util::get_window_id(pid, &app, display);
-                while xid == 0 {
-                    info!("Waiting for window id...");
+                info!("Waiting for window id...");
+                while xid == 0 {                    
                     std::thread::sleep(std::time::Duration::from_millis(200));
                     xid = util::get_window_id(pid, &app, display);
                 }
