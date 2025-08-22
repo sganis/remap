@@ -7,6 +7,7 @@ mod macos;
 mod windows;
 
 use std::process::Command;
+use std::path::Path;
 
 // --- Public API re-exported per-OS (no `platform` module re-export) ---
 #[cfg(target_os = "linux")]
