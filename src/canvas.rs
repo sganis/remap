@@ -1,8 +1,8 @@
 use flume::{Receiver, Sender};
 use anyhow::Result;
 use log::debug;
-use minifb::{MouseButton, MouseMode, ScaleMode, Window, WindowOptions};
-use crate::{Rec, ClientEvent, ServerEvent};
+use minifb::{MouseButton, MouseMode, ScaleMode, Window, WindowOptions, Key};
+use crate::{Rec, ClientEvent, ServerEvent, MOD_SHIFT, MOD_CTRL, MOD_ALT, MOD_META};
 
 // pointer bit masks
 const BTN_LEFT:       u8 = 0x01;
@@ -132,13 +132,28 @@ impl Canvas {
             }
         }
 
-        // Keys
-        self.window.get_keys_pressed(minifb::KeyRepeat::No).iter().for_each(|key| {
-            let _ = self.client_tx.send(ClientEvent::KeyEvent { down: true, key: *key as u8 });
-        });
-        self.window.get_keys_released().iter().for_each(|key| {
-            let _ = self.client_tx.send(ClientEvent::KeyEvent { down: false, key: *key as u8 });
-        });
+        // ---- Keyboard ----
+
+        // Build a fresh mods bitmask each frame
+        let mods = current_mods(&self.window);
+        //debug!("mods=0x{:x}", mods);
+
+        // Non-modifier keys with current modifiers
+        for key in self.window.get_keys_pressed(minifb::KeyRepeat::No) {
+            if is_modifier(key) { continue; }
+            if let Some(byte) = map_key_to_byte(key) {
+                debug!("key down: {:?} byte={} mods=0x{:x}", key, byte, mods);
+                let _ = self.client_tx.send(ClientEvent::KeyEvent { down: true,  key: byte, mods });
+            } else {
+                debug!("key down: {:?} (unmapped)", key);
+            }
+        }
+        for key in self.window.get_keys_released() {
+            if is_modifier(key) { continue; }
+            if let Some(byte) = map_key_to_byte(key) {
+                let _ = self.client_tx.send(ClientEvent::KeyEvent { down: false, key: byte, mods });
+            }
+        }
 
         Ok(())
     }
@@ -168,5 +183,71 @@ impl Canvas {
             incremental, x: 0, y: 0, width: self.width as u16, height: self.height as u16
         })?;
         Ok(())
+    }
+}
+
+// ---- helpers ----
+
+fn current_mods(window: &Window) -> u16 {
+    let mut m = 0;
+    if window.is_key_down(Key::LeftShift)  || window.is_key_down(Key::RightShift)  { m |= MOD_SHIFT; }
+    if window.is_key_down(Key::LeftCtrl)   || window.is_key_down(Key::RightCtrl)   { m |= MOD_CTRL;  }
+    if window.is_key_down(Key::LeftAlt)    || window.is_key_down(Key::RightAlt)    { m |= MOD_ALT;   }
+    if window.is_key_down(Key::LeftSuper)  || window.is_key_down(Key::RightSuper)  { m |= MOD_META;  }
+    m
+}
+
+fn is_modifier(key: Key) -> bool {
+    use Key::*;
+    matches!(key,
+        LeftShift | RightShift | LeftCtrl | RightCtrl |
+        LeftAlt   | RightAlt   | LeftSuper| RightSuper
+    )
+}
+
+/// Map a non-modifier `minifb::Key` to a single ASCII-like byte (unshifted base).
+/// Shift/Ctrl/Alt/Meta are carried separately via `mods`.
+/// NOTE: Navigation (Home/End/Arrows/PageUp/Down), Insert, and F-keys cannot be
+/// represented in this 1-byte scheme. To support them, evolve the protocol to
+/// send a keysym (u32) instead of `u8`.
+fn map_key_to_byte(key: Key) -> Option<u8> {
+    use Key::*;
+    match key {
+        // letters -> lowercase ASCII base
+        A=>Some(b'a'), B=>Some(b'b'), C=>Some(b'c'), D=>Some(b'd'), E=>Some(b'e'),
+        F=>Some(b'f'), G=>Some(b'g'), H=>Some(b'h'), I=>Some(b'i'), J=>Some(b'j'),
+        K=>Some(b'k'), L=>Some(b'l'), M=>Some(b'm'), N=>Some(b'n'), O=>Some(b'o'),
+        P=>Some(b'p'), Q=>Some(b'q'), R=>Some(b'r'), S=>Some(b's'), T=>Some(b't'),
+        U=>Some(b'u'), V=>Some(b'v'), W=>Some(b'w'), X=>Some(b'x'), Y=>Some(b'y'),
+        Z=>Some(b'z'),
+
+        // digits (unshifted)
+        Key0=>Some(b'0'), Key1=>Some(b'1'), Key2=>Some(b'2'), Key3=>Some(b'3'),
+        Key4=>Some(b'4'), Key5=>Some(b'5'), Key6=>Some(b'6'), Key7=>Some(b'7'),
+        Key8=>Some(b'8'), Key9=>Some(b'9'),
+
+        // punctuation (unshifted ASCII base)
+        Minus        => Some(b'-'),
+        Equal        => Some(b'='),
+        LeftBracket  => Some(b'['),
+        RightBracket => Some(b']'),
+        Backslash    => Some(b'\\'),
+        Semicolon    => Some(b';'),
+        Apostrophe   => Some(b'\''),
+        Comma        => Some(b','),
+        Period       => Some(b'.'),
+        Slash        => Some(b'/'),
+        // If present in your minifb: GraveAccent => Some(b'`'),
+
+        // controls / whitespace
+        Enter     => Some(13),   // CR
+        Tab       => Some(9),
+        Escape    => Some(27),
+        Space     => Some(32),
+        Backspace => Some(8),
+        Delete    => Some(127),
+
+        // everything else (arrows, Home/End, etc.) is not representable
+        _ => None,
     }
 }

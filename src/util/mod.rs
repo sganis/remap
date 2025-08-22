@@ -7,6 +7,8 @@ mod macos;
 #[cfg(target_os = "windows")]
 mod windows;
 
+use std::path::Path;
+
 // --- Public API re-exported per-OS (no `platform` module re-export) ---
 #[cfg(target_os = "linux")]
 pub use linux::{get_window_geometry, get_window_id};
