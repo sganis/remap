@@ -1,4 +1,8 @@
-// src/util/linux.rs
+#![allow(dead_code)]
+#![allow(unused_variables)]
+#![allow(unused_imports)]
+#![allow(unused_assignments)]
+
 use std::collections::VecDeque;
 use std::env;
 use std::path::Path;
@@ -14,8 +18,27 @@ use x11rb::protocol::xproto::{
 };
 use x11rb::rust_connection::RustConnection;
 use x11rb::NONE; // <-- use NONE (0) to mean "AnyPropertyType"
+use x11rb::protocol::xproto::{
+    ConnectionExt as _,   // <- needed so .configure_window(...) is available
+    ConfigureWindowAux,   // <- the Aux struct
+    // ConfigWindow,      // <- only needed if you reference the bitmask enum directly
+};
 
 // ---------- Public API ----------
+pub fn force_move_resize(display: u32, xid: u32, x: i32, y: i32, w: u16, h: u16) -> anyhow::Result<()> {
+    // Use a short-lived connection so we don't fight the util connection.
+    std::env::set_var("DISPLAY", format!(":{display}"));
+    let (conn, _screen_num) = x11rb::connect(None)?;
+    // Move to 0,0 and resize to the requested screen size
+    let aux = ConfigureWindowAux::new()
+        .x(x)
+        .y(y)
+        .width(w as u32)
+        .height(h as u32);
+    conn.configure_window(xid, &aux)?;
+    conn.flush()?;
+    Ok(())
+}
 
 /// Return the best window id for `pid` on `:{display}` (0 if not found).
 pub fn get_window_id(pid: u32, _needle: &str, display: u32) -> i32 {
@@ -96,9 +119,9 @@ fn find_window_bfs(target_pid: u32, display: u32) -> Result<Option<Window>> {
     let (conn, root) = connect_display(display)?;
 
     // Common atoms (created if missing)
-    let NET_WM_PID = intern(&conn, "_NET_WM_PID")?;
-    let WM_STATE = intern(&conn, "WM_STATE")?;
-    let WM_CLIENT_LEADER = intern(&conn, "WM_CLIENT_LEADER")?;
+    let net_wm_pid = intern(&conn, "_NET_WM_PID")?;
+    let wm_state = intern(&conn, "WM_STATE")?;
+    let wm_client_leader = intern(&conn, "WM_CLIENT_LEADER")?;
 
     let mut queue = VecDeque::from([root]);
     let mut best: Option<(Window, u32)> = None; // (win, area)
@@ -112,7 +135,7 @@ fn find_window_bfs(target_pid: u32, display: u32) -> Result<Option<Window>> {
         }
 
         // PID directly on this window?
-        let pid_here = get_prop_u32(&conn, w, NET_WM_PID)?;
+        let pid_here = get_prop_u32(&conn, w, net_wm_pid)?;
         debug!("scan: win=0x{w:08x}, pid_here={pid_here:?}");
 
         // If missing, try WM_CLIENT_LEADER → _NET_WM_PID
@@ -121,10 +144,10 @@ fn find_window_bfs(target_pid: u32, display: u32) -> Result<Option<Window>> {
 
         if let Some(pid) = pid_here {
             pid_match = pid == target_pid;
-        } else if let Some(lw) = get_prop_u32(&conn, w, WM_CLIENT_LEADER)? {
+        } else if let Some(lw) = get_prop_u32(&conn, w, wm_client_leader)? {
             let lw = lw as Window;
             leader_win = Some(lw);
-            let pid_leader = get_prop_u32(&conn, lw, NET_WM_PID)?;
+            let pid_leader = get_prop_u32(&conn, lw, net_wm_pid)?;
             debug!("scan: win=0x{w:08x} no pid; leader=0x{lw:08x} pid_leader={pid_leader:?}");
             if let Some(pid) = pid_leader {
                 pid_match = pid == target_pid;
@@ -136,7 +159,7 @@ fn find_window_bfs(target_pid: u32, display: u32) -> Result<Option<Window>> {
         }
 
         // Must be viewable & not override-redirect (skip tooltips/menus)
-        if !is_mapped_normal(&conn, w, WM_STATE)? {
+        if !is_mapped_normal(&conn, w, wm_state)? {
             debug!("skip: win=0x{w:08x} not mapped/normal");
             continue;
         }
@@ -170,7 +193,7 @@ fn find_window_bfs(target_pid: u32, display: u32) -> Result<Option<Window>> {
     }
 }
 
-fn is_mapped_normal(conn: &RustConnection, w: Window, WM_STATE: Atom) -> Result<bool> {
+fn is_mapped_normal(conn: &RustConnection, w: Window, wm_state: Atom) -> Result<bool> {
     // Quick check: attributes
     if let Ok(GetWindowAttributesReply {
         map_state,
@@ -190,7 +213,7 @@ fn is_mapped_normal(conn: &RustConnection, w: Window, WM_STATE: Atom) -> Result<
     }
 
     // Soft signal: presence of WM_STATE; use NONE (AnyPropertyType) to avoid type issues
-    let _ = conn.get_property(false, w, WM_STATE, NONE, 0, 2)?.reply();
+    let _ = conn.get_property(false, w, wm_state, NONE, 0, 2)?.reply();
     Ok(true)
 }
 
@@ -203,11 +226,50 @@ fn geometry_x11rb(xid: u32, display: u32) -> Result<Geometry> {
     })
 }
 
-#[allow(dead_code)]
 fn get_prop_string(conn: &RustConnection, win: Window, prop: Atom) -> Result<Option<String>> {
     let r = conn.get_property(false, win, prop, NONE, 0, u32::MAX)?.reply()?;
     if r.value_len == 0 {
         return Ok(None);
     }
     Ok(Some(String::from_utf8_lossy(&r.value).to_string()))
+}
+
+pub fn screen_size(display: u32) -> anyhow::Result<(u16, u16)> {
+    let (conn, root) = connect_display(display)?;
+    let geo = conn.get_geometry(root)?.reply()?;
+    Ok((geo.width, geo.height))
+}
+
+pub fn resize_window_to(display: u32, xid: u32, w: u16, h: u16) -> anyhow::Result<()> {
+    let (conn, _root) = connect_display(display)?;
+
+    // If your x11rb has builder methods:
+    let aux = ConfigureWindowAux::new()
+        .x(0)
+        .y(0)
+        .width(u32::from(w))
+        .height(u32::from(h));
+
+    // If your x11rb is older and the builder isn't available,
+    // uncomment this block and comment out the builder version above:
+    /*
+    let aux = ConfigureWindowAux {
+        x: Some(0),
+        y: Some(0),
+        width: Some(u32::from(w)),
+        height: Some(u32::from(h)),
+        border_width: None,
+        sibling: None,
+        stack_mode: None,
+    };
+    */
+
+    conn.configure_window(xid, &aux)?;
+    conn.flush()?;
+    Ok(())
+}
+
+pub fn maximize_window(display: u32, xid: u32) -> anyhow::Result<()> {
+    let (sw, sh) = screen_size(display)?;
+    resize_window_to(display, xid, sw, sh)
 }
