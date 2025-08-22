@@ -1,4 +1,8 @@
 #![allow(dead_code)]
+#![allow(unused_variables)]
+#![allow(unused_imports)]
+#![allow(unused_assignments)]
+
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "macos")]
