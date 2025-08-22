@@ -24,24 +24,37 @@ pub trait Message {
     fn write_to<W: Write>(&self, writer: &mut W) -> Result<()>;
 }
 
+/* ===== Keyboard modifier bitmask (shared between client & server) ===== */
+pub const MOD_SHIFT: u16 = 0x0001;
+pub const MOD_CTRL:  u16 = 0x0002;
+pub const MOD_ALT:   u16 = 0x0004; // Option on macOS
+pub const MOD_META:  u16 = 0x0008; // Super/Command/Windows
+
 #[derive(Debug)]
 pub enum ClientEvent {
     SetEncodings(Vec<Encoding>),
     FramebufferUpdateRequest { incremental: bool, x: u16, y: u16, width: u16, height: u16 },
-    KeyEvent { down: bool, key: u8 },
+    KeyEvent { down: bool, key: u8, mods: u16 },
     PointerEvent { buttons: u8, x: u16, y: u16 },
     CutText(String),
 }
 
 impl Message for ClientEvent {
     fn read_from<R: Read>(reader: &mut R) -> Result<ClientEvent> {
-        let message_type = match reader.read_u8() { Err(_) => anyhow::bail!("Disconnected"), Ok(mt) => mt };
+        let message_type = match reader.read_u8() {
+            Err(_) => anyhow::bail!("Disconnected"),
+            Ok(mt) => mt,
+        };
         match message_type {
-            2 => { reader.read_exact(&mut [0u8; 1])?;
-                   let count = reader.read_u16::<BigEndian>()?;
-                   let mut encodings = Vec::with_capacity(count as usize);
-                   for _ in 0..count { encodings.push(Encoding::read_from(reader)?); }
-                   Ok(ClientEvent::SetEncodings(encodings)) }
+            2 => {
+                reader.read_exact(&mut [0u8; 1])?;
+                let count = reader.read_u16::<BigEndian>()?;
+                let mut encodings = Vec::with_capacity(count as usize);
+                for _ in 0..count {
+                    encodings.push(Encoding::read_from(reader)?);
+                }
+                Ok(ClientEvent::SetEncodings(encodings))
+            }
             3 => Ok(ClientEvent::FramebufferUpdateRequest {
                 incremental: reader.read_u8()? != 0,
                 x: reader.read_u16::<BigEndian>()?,
@@ -49,42 +62,66 @@ impl Message for ClientEvent {
                 width: reader.read_u16::<BigEndian>()?,
                 height: reader.read_u16::<BigEndian>()?,
             }),
-            4 => { let down = reader.read_u8()? != 0;
-                   reader.read_exact(&mut [0u8; 2])?;
-                   let key = reader.read_u8()?;
-                   Ok(ClientEvent::KeyEvent { down, key }) }
+            4 => {
+                // UPDATED: include modifiers
+                let down = reader.read_u8()? != 0;
+                let mods = reader.read_u16::<BigEndian>()?;
+                let key = reader.read_u8()?;
+                Ok(ClientEvent::KeyEvent { down, key, mods })
+            }
             5 => Ok(ClientEvent::PointerEvent {
                 buttons: reader.read_u8()?,
                 x: reader.read_u16::<BigEndian>()?,
                 y: reader.read_u16::<BigEndian>()?,
             }),
-            6 => { reader.read_exact(&mut [0u8; 3])?;
-                   Ok(ClientEvent::CutText(String::read_from(reader)?)) }
+            6 => {
+                reader.read_exact(&mut [0u8; 3])?;
+                Ok(ClientEvent::CutText(String::read_from(reader)?))
+            }
             _ => anyhow::bail!("client to server message type"),
         }
     }
+
     fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
         match self {
             ClientEvent::SetEncodings(encodings) => {
-                writer.write_u8(2)?; writer.write_all(&[0u8; 1])?;
+                writer.write_u8(2)?;
+                writer.write_all(&[0u8; 1])?;
                 writer.write_u16::<BigEndian>(encodings.len() as u16)?;
-                for e in encodings { e.write_to(writer)?; }
+                for e in encodings {
+                    e.write_to(writer)?;
+                }
             }
-            ClientEvent::FramebufferUpdateRequest { incremental, x, y, width, height } => {
-                writer.write_u8(3)?; writer.write_u8(if *incremental { 1 } else { 0 })?;
-                writer.write_u16::<BigEndian>(*x)?; writer.write_u16::<BigEndian>(*y)?;
-                writer.write_u16::<BigEndian>(*width)?; writer.write_u16::<BigEndian>(*height)?;
+            ClientEvent::FramebufferUpdateRequest {
+                incremental,
+                x,
+                y,
+                width,
+                height,
+            } => {
+                writer.write_u8(3)?;
+                writer.write_u8(if *incremental { 1 } else { 0 })?;
+                writer.write_u16::<BigEndian>(*x)?;
+                writer.write_u16::<BigEndian>(*y)?;
+                writer.write_u16::<BigEndian>(*width)?;
+                writer.write_u16::<BigEndian>(*height)?;
             }
-            ClientEvent::KeyEvent { down, key } => {
-                writer.write_u8(4)?; writer.write_u8(if *down { 1 } else { 0 })?;
-                writer.write_all(&[0u8; 2])?; writer.write_u8(*key)?;
+            ClientEvent::KeyEvent { down, key, mods } => {
+                // UPDATED: write modifiers between down and key
+                writer.write_u8(4)?;
+                writer.write_u8(if *down { 1 } else { 0 })?;
+                writer.write_u16::<BigEndian>(*mods)?;
+                writer.write_u8(*key)?;
             }
             ClientEvent::PointerEvent { buttons, x, y } => {
-                writer.write_u8(5)?; writer.write_u8(*buttons)?;
-                writer.write_u16::<BigEndian>(*x)?; writer.write_u16::<BigEndian>(*y)?;
+                writer.write_u8(5)?;
+                writer.write_u8(*buttons)?;
+                writer.write_u16::<BigEndian>(*x)?;
+                writer.write_u16::<BigEndian>(*y)?;
             }
             ClientEvent::CutText(text) => {
-                writer.write_u8(6)?; writer.write_all(&[0u8; 3])?;
+                writer.write_u8(6)?;
+                writer.write_all(&[0u8; 3])?;
                 text.write_to(writer)?;
             }
         }
@@ -101,31 +138,45 @@ pub enum ServerEvent {
 
 impl Message for ServerEvent {
     fn read_from<R: Read>(reader: &mut R) -> Result<ServerEvent> {
-        let message_type = match reader.read_u8() { Err(_) => anyhow::bail!("Disconnected"), Ok(mt) => mt };
+        let message_type = match reader.read_u8() {
+            Err(_) => anyhow::bail!("Disconnected"),
+            Ok(mt) => mt,
+        };
         match message_type {
             0 => {
                 reader.read_exact(&mut [0u8; 1])?;
                 let count = reader.read_u16::<BigEndian>()?;
                 let mut rectangles = Vec::with_capacity(count as usize);
-                for _ in 0..count { rectangles.push(Rec::read_from(reader)?); }
+                for _ in 0..count {
+                    rectangles.push(Rec::read_from(reader)?);
+                }
                 Ok(ServerEvent::FramebufferUpdate { count, rectangles })
             }
             2 => Ok(ServerEvent::Bell),
-            3 => { reader.read_exact(&mut [0u8; 3])?;
-                   Ok(ServerEvent::CutText(String::read_from(reader)?)) }
+            3 => {
+                reader.read_exact(&mut [0u8; 3])?;
+                Ok(ServerEvent::CutText(String::read_from(reader)?))
+            }
             _ => anyhow::bail!("server to client message type"),
         }
     }
+
     fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
         match self {
             ServerEvent::FramebufferUpdate { count, rectangles } => {
-                writer.write_u8(0)?; writer.write_all(&[0u8; 1])?;
+                writer.write_u8(0)?;
+                writer.write_all(&[0u8; 1])?;
                 writer.write_u16::<BigEndian>(*count)?;
-                for r in rectangles { r.write_to(writer)?; }
+                for r in rectangles {
+                    r.write_to(writer)?;
+                }
             }
-            ServerEvent::Bell => { writer.write_u8(2)?; }
+            ServerEvent::Bell => {
+                writer.write_u8(2)?;
+            }
             ServerEvent::CutText(text) => {
-                writer.write_u8(3)?; writer.write_all(&[0u8; 3])?;
+                writer.write_u8(3)?;
+                writer.write_all(&[0u8; 3])?;
                 text.write_to(writer)?;
             }
         }
@@ -194,7 +245,13 @@ impl Message for String {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Encoding {
     Unknown(i32),
-    Raw, CopyRect, Rre, Hextile, Zrle, Cursor, DesktopSize,
+    Raw,
+    CopyRect,
+    Rre,
+    Hextile,
+    Zrle,
+    Cursor,
+    DesktopSize,
 }
 
 impl Message for Encoding {

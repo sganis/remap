@@ -59,7 +59,7 @@ pub fn main() -> Result<()> {
         let _ = child.try_wait();
         anyhow::bail!("SSH tunnel did not become ready on {}", local_addr);
     }
-    println!("Tunnel ready on {local_addr}");
+    info!("Tunnel ready on {local_addr}");
 
     // Connect application stream
     let stream = TcpStream::connect(&local_addr).context("connect to tunnel failed")?;
@@ -74,7 +74,7 @@ pub fn main() -> Result<()> {
     // Read initial header (use the same handle consistently)
     let width  = reader.read_u16::<BigEndian>()?;
     let height = reader.read_u16::<BigEndian>()?;
-    println!("Server geometry: {}x{}", width, height);
+    info!("Server geometry: {}x{}", width, height);
 
     let (client_tx, client_rx) = flume::unbounded::<ServerEvent>();
     let (canvas_tx, canvas_rx) = flume::unbounded::<ClientEvent>();
@@ -93,11 +93,11 @@ pub fn main() -> Result<()> {
         while let Ok(reply) = ServerEvent::read_from(&mut r) {
             let _ = client_tx.send(reply);
         }
-        println!("Server disconnected");
+        info!("Server disconnected");
     });
 
     // UI loop
-    println!("Connecting to server at 127.0.0.1:{}", port);
+    info!("Connecting to server at 127.0.0.1:{}", port);
     let mut canvas = Canvas::new(canvas_tx, client_rx)?;
     canvas.resize(width as u32, height as u32)?;
     canvas.request_update(false)?;
