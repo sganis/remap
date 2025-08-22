@@ -1,4 +1,4 @@
-// src/util/linux.rs
+#![allow(dead_code)]
 use std::collections::VecDeque;
 use std::env;
 use std::path::Path;
@@ -14,6 +14,11 @@ use x11rb::protocol::xproto::{
 };
 use x11rb::rust_connection::RustConnection;
 use x11rb::NONE; // <-- use NONE (0) to mean "AnyPropertyType"
+use x11rb::protocol::xproto::{
+    ConnectionExt as _,   // <- needed so .configure_window(...) is available
+    ConfigureWindowAux,   // <- the Aux struct
+    // ConfigWindow,      // <- only needed if you reference the bitmask enum directly
+};
 
 // ---------- Public API ----------
 
@@ -203,11 +208,50 @@ fn geometry_x11rb(xid: u32, display: u32) -> Result<Geometry> {
     })
 }
 
-#[allow(dead_code)]
 fn get_prop_string(conn: &RustConnection, win: Window, prop: Atom) -> Result<Option<String>> {
     let r = conn.get_property(false, win, prop, NONE, 0, u32::MAX)?.reply()?;
     if r.value_len == 0 {
         return Ok(None);
     }
     Ok(Some(String::from_utf8_lossy(&r.value).to_string()))
+}
+
+pub fn screen_size(display: u32) -> anyhow::Result<(u16, u16)> {
+    let (conn, root) = connect_display(display)?;
+    let geo = conn.get_geometry(root)?.reply()?;
+    Ok((geo.width, geo.height))
+}
+
+pub fn resize_window_to(display: u32, xid: u32, w: u16, h: u16) -> anyhow::Result<()> {
+    let (conn, _root) = connect_display(display)?;
+
+    // If your x11rb has builder methods:
+    let mut aux = ConfigureWindowAux::new()
+        .x(0)
+        .y(0)
+        .width(u32::from(w))
+        .height(u32::from(h));
+
+    // If your x11rb is older and the builder isn't available,
+    // uncomment this block and comment out the builder version above:
+    /*
+    let aux = ConfigureWindowAux {
+        x: Some(0),
+        y: Some(0),
+        width: Some(u32::from(w)),
+        height: Some(u32::from(h)),
+        border_width: None,
+        sibling: None,
+        stack_mode: None,
+    };
+    */
+
+    conn.configure_window(xid, &aux)?;
+    conn.flush()?;
+    Ok(())
+}
+
+pub fn maximize_window(display: u32, xid: u32) -> anyhow::Result<()> {
+    let (sw, sh) = screen_size(display)?;
+    resize_window_to(display, xid, sw, sh)
 }

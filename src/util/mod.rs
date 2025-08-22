@@ -1,5 +1,4 @@
-// src/util/mod.rs
-// --- Per-OS backends ---
+#![allow(dead_code)]
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "macos")]
@@ -8,10 +7,17 @@ mod macos;
 mod windows;
 
 use std::path::Path;
+use std::process::Command;
 
 // --- Public API re-exported per-OS (no `platform` module re-export) ---
 #[cfg(target_os = "linux")]
-pub use linux::{get_window_geometry, get_window_id};
+pub use linux::{
+    get_window_geometry, 
+    get_window_id, 
+    screen_size,
+    resize_window_to,
+    maximize_window,
+};
 //#[cfg(target_os = "macos")]
 //pub use macos::{get_window_geometry, get_window_id};
 //#[cfg(target_os = "windows")]
@@ -49,11 +55,16 @@ pub fn fix_path<P: AsRef<Path>>(p: P) -> String {
     }
 }
 
+// pub fn is_display_server_running(display: u32) -> bool {
+//     let path = format!("/tmp/.X11-unix/X{display}");
+//     std::path::Path::new(&path).exists()
+// }
 pub fn is_display_server_running(display: u32) -> bool {
-    let path = format!("/tmp/.X11-unix/X{display}");
-    std::path::Path::new(&path).exists()
+    let cmd = format!("ps aux |grep Xvfb |grep \":{display}\" >/dev/null");
+    let r = Command::new("sh").arg("-c").arg(cmd).output()
+        .expect("Could not run ps command");
+    r.status.code().unwrap() == 0
 }
-
 
 pub fn vec_equal(va: &[u8], vb: &[u8]) -> bool {
     va.len() == vb.len() && va.iter().zip(vb).all(|(a, b)| *a == *b)

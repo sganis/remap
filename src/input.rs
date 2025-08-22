@@ -49,17 +49,18 @@ const XK_Meta_R:     u32 = 0xFFE8;
 const XK_Super_L:    u32 = 0xFFEB;
 const XK_Super_R:    u32 = 0xFFEC;
 
-// ---- Virtual key bytes (must match client) ----
-const VK_HOME:      u8 = 0xE0;
-const VK_END:       u8 = 0xE1;
-const VK_INSERT:    u8 = 0xE2;
-const VK_PGUP:      u8 = 0xE3;
-const VK_PGDN:      u8 = 0xE4;
-const VK_LEFT:      u8 = 0xE5;
-const VK_RIGHT:     u8 = 0xE6;
-const VK_UP:        u8 = 0xE7;
-const VK_DOWN:      u8 = 0xE8;
+// ---- Virtual key bytes (MUST match client) ----
+const VK_HOME:   u8 = 0xE0;
+const VK_END:    u8 = 0xE1;
+const VK_INSERT: u8 = 0xE2;
+const VK_PGUP:   u8 = 0xE3;
+const VK_PGDN:   u8 = 0xE4;
+const VK_LEFT:   u8 = 0xE5;
+const VK_RIGHT:  u8 = 0xE6;
+const VK_UP:     u8 = 0xE7;
+const VK_DOWN:   u8 = 0xE8;
 
+/// Simple XTEST-based input injector.
 pub struct Input {
     conn: RustConnection,
     root: Window,
@@ -70,6 +71,8 @@ pub struct Input {
     ctrl_code:  Option<u8>,
     alt_code:   Option<u8>,
     meta_code:  Option<u8>,
+    /// Which modifiers we currently have pressed via XTEST
+    mods_down: u16,
 }
 
 impl Input {
@@ -95,7 +98,8 @@ impl Input {
 
         Self {
             conn, root, keysym_to_code, min_code, max_code,
-            shift_code, ctrl_code, alt_code, meta_code
+            shift_code, ctrl_code, alt_code, meta_code,
+            mods_down: 0,
         }
     }
 
@@ -103,65 +107,68 @@ impl Input {
     pub fn focus(&mut self) {}
     pub fn set_server_geometry(&mut self, _geom: crate::Geometry) {}
 
+    /// Move pointer to absolute coordinates (already in your code)
     pub fn mouse_move(&mut self, x: i32, y: i32, _mods: u32) {
         let (x16, y16) = (x as i16, y as i16);
-        self.conn.xtest_fake_input(MOTION_NOTIFY_EVENT, 0, 0, self.root, x16, y16, 0).unwrap();
+        self.conn
+            .xtest_fake_input(MOTION_NOTIFY_EVENT, 0, 0, self.root, x16, y16, 0)
+            .unwrap();
         self.conn.flush().unwrap();
     }
 
-    pub fn mouse_click(&mut self, x: i32, y: i32, button: u32, _mods: u32) {
-        let (x16, y16) = (x as i16, y as i16);
-        let detail = match button { 1|2|3 => button as u8, _ => 1 };
-        self.conn.xtest_fake_input(BUTTON_PRESS_EVENT,   detail, 0, self.root, x16, y16, 0).unwrap();
-        self.conn.xtest_fake_input(BUTTON_RELEASE_EVENT, detail, 0, self.root, x16, y16, 0).unwrap();
+    /// Press a mouse button (1=Left, 2=Middle, 3=Right, 4=WheelUp, 5=WheelDown)
+    pub fn mouse_press(&mut self, button: u8) {
+        self.conn
+            .xtest_fake_input(BUTTON_PRESS_EVENT, button, 0, self.root, 0, 0, 0)
+            .unwrap();
         self.conn.flush().unwrap();
+    }
+
+    /// Release a mouse button
+    pub fn mouse_release(&mut self, button: u8) {
+        self.conn
+            .xtest_fake_input(BUTTON_RELEASE_EVENT, button, 0, self.root, 0, 0, 0)
+            .unwrap();
+        self.conn.flush().unwrap();
+    }
+
+    /// Click (press + release) without moving the pointer
+    pub fn mouse_click_button(&mut self, button: u8) {
+        self.mouse_press(button);
+        self.mouse_release(button);
     }
 
     /// Key down (protocol: base byte + modifiers bitmask).
     pub fn key_down(&mut self, key: u8, mods: u16) {
         let (ks, code, extra_shift) = self.resolve_from_byte(key);
-        let need_shift = extra_shift || (mods & MOD_SHIFT) != 0;
-        let need_ctrl  = (mods & MOD_CTRL)  != 0;
-        let need_alt   = (mods & MOD_ALT)   != 0;
-        let need_meta  = (mods & MOD_META)  != 0;
+        let mut desired = mods;
+        if extra_shift { desired |= MOD_SHIFT; } // temporary shift needed for this key only
 
         debug!(
-            "key_down: byte={} ks={:#06x?} code={:?} mods=0x{:x} [S={},C={},A={},M={}]",
-            key, ks.unwrap_or(0), code, mods, need_shift, need_ctrl, need_alt, need_meta
+            "key_down: byte={} ks={:#06x?} code={:?} mods=0x{:x} desired=0x{:x}",
+            key, ks.unwrap_or(0), code, mods, desired
         );
 
-        if let Some(code) = code {
-            if need_ctrl { if let Some(c) = self.ctrl_code { self.press_code(c); } }
-            if need_alt  { if let Some(c) = self.alt_code  { self.press_code(c); } }
-            if need_meta { if let Some(c) = self.meta_code { self.press_code(c); } }
-            if need_shift{ if let Some(c) = self.shift_code{ self.press_code(c); } }
+        self.sync_modifiers(desired);
 
+        if let Some(code) = code {
             self.press_code(code);
             self.conn.flush().unwrap();
         }
     }
 
-    /// Key up (release key first, then modifiers).
+    /// Key up (release key first, then re-sync modifiers to the client state).
     pub fn key_up(&mut self, key: u8, mods: u16) {
-        let (ks, code, extra_shift) = self.resolve_from_byte(key);
-        let need_shift = extra_shift || (mods & MOD_SHIFT) != 0;
-        let need_ctrl  = (mods & MOD_CTRL)  != 0;
-        let need_alt   = (mods & MOD_ALT)   != 0;
-        let need_meta  = (mods & MOD_META)  != 0;
+        let (ks, code, _extra_shift) = self.resolve_from_byte(key);
 
         debug!(
-            "key_up:   byte={} ks={:#06x?} code={:?} mods=0x{:x} [S={},C={},A={},M={}]",
-            key, ks.unwrap_or(0), code, mods, need_shift, need_ctrl, need_alt, need_meta
+            "key_up:   byte={} ks={:#06x?} code={:?} mods=0x{:x}",
+            key, ks.unwrap_or(0), code, mods
         );
 
         if let Some(code) = code {
             self.release_code(code);
-
-            if need_shift{ if let Some(c) = self.shift_code{ self.release_code(c); } }
-            if need_meta { if let Some(c) = self.meta_code { self.release_code(c); } }
-            if need_alt  { if let Some(c) = self.alt_code  { self.release_code(c); } }
-            if need_ctrl { if let Some(c) = self.ctrl_code { self.release_code(c); } }
-
+            self.sync_modifiers(mods); // drop any temporary shift we added for this key only
             self.conn.flush().unwrap();
         }
     }
@@ -172,6 +179,34 @@ impl Input {
     }
     fn release_code(&mut self, code: u8) {
         let _ = self.conn.xtest_fake_input(KEY_RELEASE_EVENT, code, 0, self.root, 0, 0, 0);
+    }
+
+    /// Press/release modifiers so that our XTEST-held modifiers match `desired`.
+    /// This avoids borrowing `self` immutably while mutating it by first taking
+    /// a local snapshot of the (flag, keycode) pairs.
+    fn sync_modifiers(&mut self, desired: u16) {
+        // Snapshot of modifier mapping (copies only Option<u8> / u16)
+        let mods_spec: [(u16, Option<u8>); 4] = [
+            (MOD_CTRL,  self.ctrl_code),
+            (MOD_ALT,   self.alt_code),
+            (MOD_META,  self.meta_code),
+            (MOD_SHIFT, self.shift_code),
+        ];
+
+        // Release any we shouldn't hold
+        for (flag, code_opt) in mods_spec.iter().copied() {
+            if (self.mods_down & flag) != 0 && (desired & flag) == 0 {
+                if let Some(code) = code_opt { self.release_code(code); }
+                self.mods_down &= !flag;
+            }
+        }
+        // Press any we need but don't hold
+        for (flag, code_opt) in mods_spec.iter().copied() {
+            if (self.mods_down & flag) == 0 && (desired & flag) != 0 {
+                if let Some(code) = code_opt { self.press_code(code); }
+                self.mods_down |= flag;
+            }
+        }
     }
 
     /// Convert protocol byte into (keysym, keycode, extra_shift_needed).
