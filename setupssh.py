@@ -162,9 +162,9 @@ def generate_keys(userhost):
 	# ssh-keygen defaults to openssh rsa 3072 bits keys
 	# PEM format not supported by libssh2 openssl no-stdio ?
 	if is_win:
-		cmd = f'echo y | ssh-keygen -m PEM -q -N "" -f {seckey}'
+		cmd = f'echo y | ssh-keygen -t rsa -m PEM -q -N "" -f {seckey}'
 	else:
-		cmd = f'ssh-keygen -m PEM -q -N "" -f {seckey}'
+		cmd = f'ssh-keygen -m PEM -t rsa -q -N "" -f {seckey}'
 	run(cmd)
 	with open(pubkey) as r:
 		pubkey = r.read()
