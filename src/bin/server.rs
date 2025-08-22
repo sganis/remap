@@ -223,10 +223,10 @@ mod linux_impl {
                     ClientEvent::FramebufferUpdateRequest { incremental, .. } => {
                         let _ = capture_tx.send(incremental);
                     }
-                    ClientEvent::KeyEvent { down, key } => {
+                    ClientEvent::KeyEvent { down, key, mods } => {
                         let action = if down { "down" } else { "up" };
                         debug!("key {}: {}", action, key);
-                        if down { input.key_down(key); } else { input.key_up(key); }
+                        if down { input.key_down(key, mods); } else { input.key_up(key, mods); }
                     }
                     ClientEvent::PointerEvent { buttons, x, y } => {
                         let action = if buttons > 0 { "pressed" } else { "released" };

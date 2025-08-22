@@ -14,8 +14,11 @@ use x11rb::protocol::xproto::{
     BUTTON_RELEASE_EVENT,
     MOTION_NOTIFY_EVENT,
 };
-use x11rb::protocol::xtest::ConnectionExt as _;
+use x11rb::protocol::xtest::ConnectionExt as _; // for xtest_fake_input
 use x11rb::rust_connection::RustConnection;
+
+// Import shared modifier bits from lib.rs
+use crate::{MOD_SHIFT, MOD_CTRL, MOD_ALT, MOD_META};
 
 // --- KeySym constants we care about ---
 const XK_BackSpace:  u32 = 0xFF08;
@@ -25,10 +28,17 @@ const XK_Escape:     u32 = 0xFF1B;
 const XK_Delete:     u32 = 0xFFFF;
 const XK_KP_Enter:   u32 = 0xFF8D;
 
+// Modifiers: we’ll try these in this order (left preferred)
 const XK_Shift_L:    u32 = 0xFFE1;
 const XK_Shift_R:    u32 = 0xFFE2;
 const XK_Control_L:  u32 = 0xFFE3;
 const XK_Control_R:  u32 = 0xFFE4;
+const XK_Alt_L:      u32 = 0xFFE9;
+const XK_Alt_R:      u32 = 0xFFEA;
+const XK_Meta_L:     u32 = 0xFFE7; // sometimes "Super" is used instead of "Meta"
+const XK_Meta_R:     u32 = 0xFFE8;
+const XK_Super_L:    u32 = 0xFFEB; // fallback when Meta is not present
+const XK_Super_R:    u32 = 0xFFEC;
 
 /// Simple XTEST-based input injector (no enigo).
 pub struct Input {
@@ -42,6 +52,8 @@ pub struct Input {
     /// convenient modifier keycodes (left-preferred)
     shift_code: Option<u8>,
     ctrl_code:  Option<u8>,
+    alt_code:   Option<u8>,
+    meta_code:  Option<u8>, // Meta or Super
 }
 
 impl Input {
@@ -63,24 +75,26 @@ impl Input {
         let mapping = fetch_keyboard_mapping(&conn);
         let keysym_to_code = invert_keyboard_mapping(&mapping, min_code);
 
-        // Modifiers
-        let shift_code = keysym_to_code
-            .get(&XK_Shift_L).copied()
-            .or_else(|| keysym_to_code.get(&XK_Shift_R).copied());
-        let ctrl_code = keysym_to_code
-            .get(&XK_Control_L).copied()
-            .or_else(|| keysym_to_code.get(&XK_Control_R).copied());
+        // Modifiers (left-preferred)
+        let shift_code = pick_first(&keysym_to_code, &[XK_Shift_L, XK_Shift_R]);
+        let ctrl_code  = pick_first(&keysym_to_code, &[XK_Control_L, XK_Control_R]);
+        let alt_code   = pick_first(&keysym_to_code, &[XK_Alt_L, XK_Alt_R]);
+
+        // Meta can be mapped as Meta or Super depending on the server
+        let meta_code  = pick_first(&keysym_to_code, &[XK_Meta_L, XK_Meta_R, XK_Super_L, XK_Super_R]);
 
         debug!(
-            "input: Return→{:?}, KP_Enter→{:?}, 'e'→{:?}, Shift→{:?}, Ctrl→{:?}",
+            "input: Return→{:?}, KP_Enter→{:?}, 'e'→{:?}, Shift→{:?}, Ctrl→{:?}, Alt→{:?}, Meta→{:?}",
             keysym_to_code.get(&XK_Return),
             keysym_to_code.get(&XK_KP_Enter),
             keysym_to_code.get(&(b'e' as u32)),
-            shift_code,
-            ctrl_code,
+            shift_code, ctrl_code, alt_code, meta_code,
         );
 
-        Self { conn, root, keysym_to_code, min_code, max_code, shift_code, ctrl_code }
+        Self {
+            conn, root, keysym_to_code, min_code, max_code,
+            shift_code, ctrl_code, alt_code, meta_code
+        }
     }
 
     pub fn set_window(&mut self, _xid: i32) {}
@@ -112,42 +126,52 @@ impl Input {
         self.conn.flush().unwrap();
     }
 
-    /// Key down.
-    pub fn key_down(&mut self, key: u8) {
-        let (ks, code, need_shift, need_ctrl) = self.resolve_keycode_and_mods(key);
+    /// Key down (protocol: base byte + modifiers bitmask).
+    pub fn key_down(&mut self, key: u8, mods: u16) {
+        let (ks, code, extra_shift) = self.resolve_from_byte(key);
+        let need_shift = extra_shift || (mods & MOD_SHIFT) != 0;
+        let need_ctrl  = (mods & MOD_CTRL)  != 0;
+        let need_alt   = (mods & MOD_ALT)   != 0;
+        let need_meta  = (mods & MOD_META)  != 0;
+
         debug!(
-            "key_down: byte={key} ks={:#06x?} code={code:?} shift={need_shift} ctrl={need_ctrl}",
-            ks.unwrap_or(0)
+            "key_down: byte={} ks={:#06x?} code={:?} mods=0x{:x} [shift={}, ctrl={}, alt={}, meta={}]",
+            key, ks.unwrap_or(0), code, mods, need_shift, need_ctrl, need_alt, need_meta
         );
+
         if let Some(code) = code {
-            // Press required modifiers then the key
-            if need_ctrl {
-                if let Some(c) = self.ctrl_code { self.press_code(c); }
-            }
-            if need_shift {
-                if let Some(c) = self.shift_code { self.press_code(c); }
-            }
+            // Press required modifiers, then the key
+            if need_ctrl { if let Some(c) = self.ctrl_code { self.press_code(c); } }
+            if need_alt  { if let Some(c) = self.alt_code  { self.press_code(c); } }
+            if need_meta { if let Some(c) = self.meta_code { self.press_code(c); } }
+            if need_shift{ if let Some(c) = self.shift_code{ self.press_code(c); } }
+
             self.press_code(code);
             self.conn.flush().unwrap();
         }
     }
 
-    /// Key up.
-    pub fn key_up(&mut self, key: u8) {
-        let (ks, code, need_shift, need_ctrl) = self.resolve_keycode_and_mods(key);
+    /// Key up (release key first, then modifiers we synthesized).
+    pub fn key_up(&mut self, key: u8, mods: u16) {
+        let (ks, code, extra_shift) = self.resolve_from_byte(key);
+        let need_shift = extra_shift || (mods & MOD_SHIFT) != 0;
+        let need_ctrl  = (mods & MOD_CTRL)  != 0;
+        let need_alt   = (mods & MOD_ALT)   != 0;
+        let need_meta  = (mods & MOD_META)  != 0;
+
         debug!(
-            "key_up:   byte={key} ks={:#06x?} code={code:?} shift={need_shift} ctrl={need_ctrl}",
-            ks.unwrap_or(0)
+            "key_up:   byte={} ks={:#06x?} code={:?} mods=0x{:x} [shift={}, ctrl={}, alt={}, meta={}]",
+            key, ks.unwrap_or(0), code, mods, need_shift, need_ctrl, need_alt, need_meta
         );
+
         if let Some(code) = code {
-            // Release key then release modifiers we synthesized
             self.release_code(code);
-            if need_shift {
-                if let Some(c) = self.shift_code { self.release_code(c); }
-            }
-            if need_ctrl {
-                if let Some(c) = self.ctrl_code { self.release_code(c); }
-            }
+
+            if need_shift{ if let Some(c) = self.shift_code{ self.release_code(c); } }
+            if need_meta { if let Some(c) = self.meta_code { self.release_code(c); } }
+            if need_alt  { if let Some(c) = self.alt_code  { self.release_code(c); } }
+            if need_ctrl { if let Some(c) = self.ctrl_code { self.release_code(c); } }
+
             self.conn.flush().unwrap();
         }
     }
@@ -160,88 +184,68 @@ impl Input {
         let _ = self.conn.xtest_fake_input(KEY_RELEASE_EVENT, code, 0, self.root, 0, 0, 0);
     }
 
-    /// Resolve the incoming byte to (keysym, keycode, need_shift, need_ctrl).
-    /// Strategy:
-    ///  1) Control bytes 0x01..0x1A  → Ctrl + (A..Z).
-    ///  2) Special controls/backspace/tab/enter/esc/del.
-    ///  3) Printable ASCII:
-    ///     a) If directly bound → use it.
-    ///     b) If uppercase or shifted symbol → try base char + Shift.
-    ///  4) If byte is in [min_code,max_code], treat it as a raw X11 keycode.
-    fn resolve_keycode_and_mods(&self, key: u8) -> (Option<u32>, Option<u8>, bool, bool) {
-        // 1) CTRL-A..CTRL-Z
-        if (1..=26).contains(&key) {
-            let base = b'a' + (key - 1); // 'a'..'z'
-            let (code, ks) = self.find_letter_code_any_case(base);
-            return (Some(ks), code, false, true);
-        }
-
-        // 2) Common controls
+    /// Convert a single byte (ASCII-like) into (keysym, keycode, extra_shift_needed).
+    /// We accept:
+    /// - 8,9,10/13,27,127 for Backspace/Tab/Return/Escape/Delete
+    /// - 32..=126 printable ASCII:
+    ///     * If directly bound, use it.
+    ///     * If uppercase letter, try lowercase + extra Shift.
+    ///     * If shifted punctuation ('_', '+', etc.), map to base ('-', '=') + extra Shift.
+    fn resolve_from_byte(&self, key: u8) -> (Option<u32>, Option<u8>, bool) {
+        // Controls
         match key {
-            8   => return (Some(XK_BackSpace), self.keysym_to_code.get(&XK_BackSpace).copied(), false, false),
-            9   => return (Some(XK_Tab),       self.keysym_to_code.get(&XK_Tab).copied(),       false, false),
-            10 | 13 =>
-                // Return or KP_Enter
-                return if let Some(c) = self.keysym_to_code.get(&XK_Return).copied() {
-                    (Some(XK_Return), Some(c), false, false)
-                } else if let Some(c) = self.keysym_to_code.get(&XK_KP_Enter).copied() {
-                    (Some(XK_KP_Enter), Some(c), false, false)
-                } else {
-                    (Some(XK_Return), None, false, false)
-                },
-            27  => return (Some(XK_Escape),    self.keysym_to_code.get(&XK_Escape).copied(),    false, false),
-            127 => return (Some(XK_Delete),    self.keysym_to_code.get(&XK_Delete).copied(),    false, false),
+            8   => { let c = self.keysym_to_code.get(&XK_BackSpace).copied();
+                     return (Some(XK_BackSpace), c, false); }
+            9   => { let c = self.keysym_to_code.get(&XK_Tab).copied();
+                     return (Some(XK_Tab), c, false); }
+            10 | 13 => {
+                if let Some(c) = self.keysym_to_code.get(&XK_Return).copied() {
+                    return (Some(XK_Return), Some(c), false);
+                }
+                if let Some(c) = self.keysym_to_code.get(&XK_KP_Enter).copied() {
+                    return (Some(XK_KP_Enter), Some(c), false);
+                }
+                return (Some(XK_Return), None, false);
+            }
+            27  => { let c = self.keysym_to_code.get(&XK_Escape).copied();
+                     return (Some(XK_Escape), c, false); }
+            127 => { let c = self.keysym_to_code.get(&XK_Delete).copied();
+                     return (Some(XK_Delete), c, false); }
             _ => {}
         }
 
-        // 3) Printable ASCII
+        // Printable ASCII
         if (32..=126).contains(&key) {
             let ks = key as u32;
 
-            // 3a) Direct binding?
+            // Direct binding?
             if let Some(&code) = self.keysym_to_code.get(&ks) {
-                return (Some(ks), Some(code), false, false);
+                return (Some(ks), Some(code), false);
             }
 
-            // 3b) If uppercase letter, try lowercase + Shift
+            // Uppercase letter? try lowercase + shift
             if key.is_ascii_uppercase() {
                 let base = key.to_ascii_lowercase() as u32;
                 if let Some(&code) = self.keysym_to_code.get(&base) {
-                    return (Some(ks), Some(code), true, false);
+                    return (Some(ks), Some(code), true);
                 }
             }
 
-            // 3c) If shifted symbol, try base char + Shift (US layout)
+            // Shifted symbol? map back to base + shift (US layout)
             if let Some(base_char) = shifted_symbol_base(key) {
                 let base_ks = base_char as u32;
                 if let Some(&code) = self.keysym_to_code.get(&base_ks) {
-                    return (Some(ks), Some(code), true, false);
+                    return (Some(ks), Some(code), true);
                 }
             }
 
-            // Unshifted punctuation/digits should have been covered by 3a; if not bound, fall through.
-            return (Some(ks), None, false, false);
+            // Unshifted punctuation/digits should have been covered by "direct binding".
+            return (Some(ks), None, false);
         }
 
-        // 4) Raw keycode fallback (transport might have sent an X11 keycode)
-        if key >= self.min_code && key <= self.max_code {
-            return (None, Some(key), false, false);
-        }
-
-        (None, None, false, false)
-    }
-
-    /// Find a letter keycode for either case; returns (code, chosen_keysym).
-    fn find_letter_code_any_case(&self, lower: u8) -> (Option<u8>, u32) {
-        let lower_ks = (lower as u32);
-        if let Some(&c) = self.keysym_to_code.get(&lower_ks) {
-            return (Some(c), lower_ks);
-        }
-        let upper_ks = (lower.to_ascii_uppercase() as u32);
-        if let Some(&c) = self.keysym_to_code.get(&upper_ks) {
-            return (Some(c), upper_ks);
-        }
-        (None, lower_ks)
+        // We *could* treat values inside [min_code,max_code] as a raw X11 keycode,
+        // but our protocol sends ASCII-ish bytes, so ignore that path by default.
+        (None, None, false)
     }
 }
 
@@ -272,6 +276,16 @@ fn shifted_symbol_base(ch: u8) -> Option<u8> {
         b'~' => Some(b'`'),
         _ => None,
     }
+}
+
+/// Pick the first available keycode for a list of possible modifier keysyms.
+fn pick_first(map: &HashMap<u32, u8>, candidates: &[u32]) -> Option<u8> {
+    for ks in candidates {
+        if let Some(&c) = map.get(ks) {
+            return Some(c);
+        }
+    }
+    None
 }
 
 /// Query the keyboard mapping from the server.
