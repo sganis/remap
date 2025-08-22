@@ -3,7 +3,6 @@
 #![allow(unused_imports)]
 #![allow(unused_assignments)]
 
-
 //! Remap server (Linux-only): start Xvfb, launch the app (xterm by default),
 //! capture rectangles via remap::capture::Capture and send to client,
 //! handle input via remap::input::Input, and clean up on Ctrl+C.
@@ -17,12 +16,14 @@ mod linux_impl {
     use clap::Parser;
     use log::{debug, info, trace};
     use std::io::Write;
-    use std::net::TcpListener;
     use std::process::Command;
     use std::time::Instant;
 
-    use remap::{util, ClientEvent, Message, Rec, ServerEvent};
+    use remap::{util, ClientEvent, Rec, ServerEvent};
     use remap::capture::Capture;
+
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+    use tokio::net::{TcpListener, TcpStream};
 
     // Client pointer bit masks (must match the client)
     const BTN_LEFT:       u8 = 0x01;
@@ -58,8 +59,6 @@ mod linux_impl {
             .args(["-rules","base","-model","pc105","-layout","us","-option",""])
             .status();
     }
-
-
 
     // --- RANDR helpers: pick or create a mode, best-effort ---
 
@@ -169,7 +168,6 @@ mod linux_impl {
         let mut tokens: Vec<&str> = Vec::new();
         tokens.push("--newmode");
         tokens.push(&name);
-        // Split params by whitespace preserving tokens
         for t in params.split_whitespace() {
             tokens.push(t);
         }
@@ -224,10 +222,9 @@ mod linux_impl {
                 log::info!("X RANDR: switched to {}x{}", w, h);
                 return;
             }
-            // fallthrough if failed
         }
 
-        // 3) Try to create the mode (may fail on some Xvfb builds)
+        // 3) Try to create the mode
         if try_create_and_set_mode(display, &out, want) {
             log::info!("X RANDR: created and switched to {}x{}", w, h);
             return;
@@ -247,26 +244,7 @@ mod linux_impl {
         log::debug!("X RANDR: unable to set {}x{} (kept current mode)", w, h);
     }
 
-    // Optional: if you want to try resizing the X screen when the client resizes.
-    #[allow(dead_code)]
-    fn try_resize_display(display: u32, w: u16, h: u16) {
-        let mode = format!("{}x{}", w, h);
-        let disp = format!(":{}", display);
-        match Command::new("xrandr")
-            .env("DISPLAY", &disp)
-            .args(["-s", &mode])
-            .output()
-        {
-            Ok(o) if o.status.success() => info!("X RANDR: set mode {mode}"),
-            Ok(o) => {
-                let err = String::from_utf8_lossy(&o.stderr);
-                debug!("xrandr failed ({}): {}", o.status, err.trim());
-            }
-            Err(e) => debug!("xrandr not available: {e}"),
-        }
-    }
-
-    pub fn main_linux() -> Result<()> {
+    pub async fn main_linux() -> Result<()> {
         dotenv::dotenv().ok();
         env_logger::init();
 
@@ -298,7 +276,7 @@ mod linux_impl {
 
         // Start Xvfb if not desktop mode
         if !desktop {
-            // Start Xvfb with a decent 24-bit screen (with no alpha channel)
+            // Start Xvfb
             let p = Command::new("Xvfb")
                 .args([
                     "+extension", "GLX",
@@ -347,43 +325,6 @@ mod linux_impl {
                 info!("Window xid: {} ({:#06x})", xid, xid);
                 geometry = util::get_window_geometry(xid, display);
                 info!("Window geometry: {:?} (server)", geometry);
-
-                // // Enlarge the app to the full Xvfb screen
-                // if xid != 0 {
-                //     if let Ok((sw, sh)) = util::screen_size(display) {
-                //         info!("Target Xvfb size: {}x{}", sw, sh);
-
-                //         // 1) Politely ask any WM to maximize/fullscreen (EWMH). Harmless on Xvfb-without-WM.
-                //         if let Err(e) = util::maximize_window(display, xid as u32) {
-                //             debug!("maximize_window (EWMH) ignored/failed: {:?}", e);
-                //         }
-                //         std::thread::sleep(std::time::Duration::from_millis(120));
-
-                //         // 2) Force move+resize (works even with no WM). Retry a few times in case the app
-                //         //    does an initial layout pass and resizes itself once after mapping.
-                //         for attempt in 1..=8 {
-                //             // Try move+resize to (0,0, sw, sh). Fall back to util::resize_window_to if you prefer.
-                //             let _ = util::force_move_resize(display, xid as u32, 0, 0, sw, sh)
-                //                 .or_else(|_| util::resize_window_to(display, xid as u32, sw, sh));
-
-                //             std::thread::sleep(std::time::Duration::from_millis(80));
-
-                //             let g = util::get_window_geometry(xid, display);
-                //             if g.width == sw as i32 && g.height == sh as i32 {
-                //                 info!("Window matched screen on attempt {}: {}x{}", attempt, g.width, g.height);
-                //                 break;
-                //             } else {
-                //                 debug!("still {}x{}, want {}x{} (attempt {})", g.width, g.height, sw, sh, attempt);
-                //             }
-                //         }
-
-                //         // 3) Re-read final geometry for logging
-                //         geometry = util::get_window_geometry(xid, display);
-                //         info!("Window geometry after maximize: {:?} (server)", geometry);
-                //     } else {
-                //         info!("Could not read screen size; skipping maximize");
-                //     }
-                // }
             }
         }
 
@@ -398,168 +339,191 @@ mod linux_impl {
                 }
                 if let Some(p) = &mut display_proc {
                     let _ = p.kill();
-                    info!("Display :{} stopped.", display);
+                    info!("Display stopped.");
                 }
                 std::process::exit(0);
             })?;
         }
 
-        // Listen for client connections
+        // Async listener
         let addr = format!("127.0.0.1:{port}");
-        let listener = TcpListener::bind(&addr)?;
+        let listener = TcpListener::bind(&addr).await?;
         info!("Listening on {}", addr);
 
         loop {
-            let (mut stream, peer) = listener.accept()?;
+            let (stream, peer) = listener.accept().await?;
             info!("Client connected: {}", peer);
+            let desktop_flag = desktop;
+            let display_num = display;
+            let xid_conn = xid;
+            let geometry_conn = geometry;
 
-            // Channels for capture→writer pipeline and capture control
-            let (capture_tx, capture_rx) = flume::unbounded::<bool>(); // send 'incremental' flag
-            let (writer_tx, writer_rx) = flume::unbounded::<Vec<Rec>>();
-
-            // Create a Capture (xid=0 means screen, non-zero means window)
-            //let mut capture = Capture::new(xid.max(0) as u32);
-            let mut capture = Capture::new(0);
-            let (width, height) = capture.get_geometry();
-
-            // Send initial geometry header (u16 BE, twice)
-            stream.write_all(&u16::try_from(width).unwrap_or(0).to_be_bytes())?;
-            stream.write_all(&u16::try_from(height).unwrap_or(0).to_be_bytes())?;
-
-            // Spawn capture thread
-            std::thread::spawn(move || {
-                loop {
-                    // Default to incremental=true unless a request arrives
-                    let mut incremental = true;
-                    while let Ok(inc) = capture_rx.try_recv() {
-                        trace!("capture_rx: set incremental={inc}");
-                        incremental = inc;
-                    }
-                    let t0 = Instant::now();
-                    let rects = capture.get_image(incremental);
-                    trace!("capture.get_image({incremental}) took {:?}", t0.elapsed());
-
-                    if !rects.is_empty() {
-                        debug!("capture produced {} rectangles -> writer", rects.len());
-                        if writer_tx.send(rects).is_err() {
-                            break;
-                        }
-                    } else {
-                        // Avoid busy-spin; sleep a bit if nothing changed
-                        std::thread::sleep(std::time::Duration::from_millis(4));
-                    }
+            tokio::spawn(async move {
+                if let Err(e) = handle_connection(stream, desktop_flag, display_num, xid_conn, geometry_conn).await {
+                    eprintln!("connection error: {e:?}");
                 }
             });
+        }
+    }
 
-            // Spawn writer thread (sends ServerEvent::FramebufferUpdate)
-            let writer_stream = stream.try_clone()?;
-            std::thread::spawn(move || {
-                let mut writer = writer_stream;
-                while let Ok(rects) = writer_rx.recv() {
-                    let evt = ServerEvent::FramebufferUpdate {
-                        count: rects.len() as u16,
-                        rectangles: rects,
-                    };
-                    if evt.write_to(&mut writer).is_err() {
-                        break;
-                    }
-                }
-            });
+    async fn handle_connection(
+        stream: TcpStream,
+        desktop: bool,
+        display: u32,
+        xid: i32,
+        geometry: remap::Geometry,
+    ) -> Result<()> {
+        use flume as fl;
 
-            // Set up input injection
-            let mut input = Input::new();
-            if !desktop {
-                input.set_window(xid);
-                input.set_server_geometry(geometry);
-                input.focus();
-            }
+        // Channels for capture→writer pipeline and capture control
+        let (capture_tx, capture_rx) = fl::unbounded::<bool>(); // send 'incremental' flag
+        let (writer_tx, writer_rx) = fl::unbounded::<Vec<Rec>>();
 
-            // Track latest client size (optional)
-            let mut client_w: u16 = width.min(u16::MAX) as u16;
-            let mut client_h: u16 = height.min(u16::MAX) as u16;
-            let mut last_buttons: u8 = 0;
-            
-            // Handle client messages on this connection
+        // Create a Capture (xid=0 means screen, non-zero means window)
+        // let mut capture = Capture::new(xid.max(0) as u32);
+        let mut capture = Capture::new(0);
+        let (width, height) = capture.get_geometry();
+
+        // Split stream into read/write halves
+        let (mut reader, mut writer) = stream.into_split();
+
+        // Send initial geometry header (u16 BE, twice)
+        writer.write_all(&u16::try_from(width).unwrap_or(0).to_be_bytes()).await?;
+        writer.write_all(&u16::try_from(height).unwrap_or(0).to_be_bytes()).await?;
+
+        // Spawn capture thread (blocking)
+        std::thread::spawn(move || {
             loop {
-                let msg = match ClientEvent::read_from(&mut stream) {
-                    Ok(m) => m,
-                    Err(_) => {
-                        info!("Client disconnected");
+                // Default to incremental=true unless a request arrives
+                let mut incremental = true;
+                while let Ok(inc) = capture_rx.try_recv() {
+                    trace!("capture_rx: set incremental={inc}");
+                    incremental = inc;
+                }
+                let t0 = Instant::now();
+                let rects = capture.get_image(incremental);
+                trace!("capture.get_image({incremental}) took {:?}", t0.elapsed());
+
+                if !rects.is_empty() {
+                    debug!("capture produced {} rectangles -> writer", rects.len());
+                    if writer_tx.send(rects).is_err() {
                         break;
                     }
+                } else {
+                    // Avoid busy-spin; sleep a bit if nothing changed
+                    std::thread::sleep(std::time::Duration::from_millis(4));
+                }
+            }
+        });
+
+        // Spawn async writer task (sends ServerEvent::FramebufferUpdate)
+        let mut writer2 = writer;
+        tokio::spawn(async move {
+            while let Ok(rects) = writer_rx.recv_async().await {
+                let evt = ServerEvent::FramebufferUpdate {
+                    count: rects.len() as u16,
+                    rectangles: rects,
                 };
+                if let Err(e) = evt.write(&mut writer2).await {
+                    debug!("writer task ended: {e}");
+                    break;
+                }
+            }
+        });
 
-                match msg {
-                    ClientEvent::FramebufferUpdateRequest { incremental, .. } => {
-                        // Pass through to capture thread
-                        let _ = capture_tx.send(incremental);
+        // Set up input injection
+        let mut input = Input::new();
+        if !desktop {
+            input.set_window(xid);
+            input.set_server_geometry(geometry);
+            input.focus();
+        }
+
+        // Track latest client size (optional)
+        let mut client_w: u16 = width.min(u16::MAX) as u16;
+        let mut client_h: u16 = height.min(u16::MAX) as u16;
+        let mut last_buttons: u8 = 0;
+
+        // Handle client messages on this connection (async read loop)
+        loop {
+            let msg = match ClientEvent::read(&mut reader).await {
+                Ok(m) => m,
+                Err(e) => {
+                    info!("Client disconnected ({e})");
+                    break;
+                }
+            };
+
+            match msg {
+                ClientEvent::FramebufferUpdateRequest { incremental, .. } => {
+                    // Pass through to capture thread
+                    let _ = capture_tx.send(incremental);
+                }
+
+                ClientEvent::KeyEvent { down, key, mods } => {
+                    if down {
+                        input.key_down(key, mods);
+                    } else {
+                        input.key_up(key, mods);
+                    }
+                }
+
+                ClientEvent::PointerEvent { buttons, x, y } => {
+                    // 1) Always move the pointer first
+                    input.mouse_move(x as i32, y as i32, 0);
+
+                    // 2) Handle wheel pulses (client sends them as one-off events)
+                    if (buttons & BTN_WHEEL_UP) != 0 {
+                        input.mouse_click_button(4); // X11: 4 = wheel up
+                    }
+                    if (buttons & BTN_WHEEL_DOWN) != 0 {
+                        input.mouse_click_button(5); // X11: 5 = wheel down
                     }
 
-                    ClientEvent::KeyEvent { down, key, mods } => {
-                        if down { 
-                            input.key_down(key, mods);
-                         } else { 
-                            input.key_up(key, mods); 
-                        }
-                    }
+                    // 3) Edge-detect normal buttons against previous state
+                    let pressed  =  buttons & !last_buttons;
+                    let released =  last_buttons & !buttons;
 
-                    ClientEvent::PointerEvent { buttons, x, y } => {
-                        // 1) Always move the pointer first
-                        input.mouse_move(x as i32, y as i32, 0);
+                    // Left
+                    if (pressed  & BTN_LEFT)   != 0 { input.mouse_press(1); }
+                    if (released & BTN_LEFT)   != 0 { input.mouse_release(1); }
 
-                        // 2) Handle wheel pulses (client sends them as one-off events)
-                        if (buttons & BTN_WHEEL_UP) != 0 {
-                            input.mouse_click_button(4); // X11: 4 = wheel up
-                        }
-                        if (buttons & BTN_WHEEL_DOWN) != 0 {
-                            input.mouse_click_button(5); // X11: 5 = wheel down
-                        }
+                    // Middle
+                    if (pressed  & BTN_MIDDLE) != 0 { input.mouse_press(2); }
+                    if (released & BTN_MIDDLE) != 0 { input.mouse_release(2); }
 
-                        // 3) Edge-detect normal buttons against previous state
-                        let pressed  =  buttons & !last_buttons;
-                        let released =  last_buttons & !buttons;
+                    // Right
+                    if (pressed  & BTN_RIGHT)  != 0 { input.mouse_press(3); }
+                    if (released & BTN_RIGHT)  != 0 { input.mouse_release(3); }
 
-                        // Left
-                        if (pressed  & BTN_LEFT)   != 0 { input.mouse_press(1); }
-                        if (released & BTN_LEFT)   != 0 { input.mouse_release(1); }
+                    last_buttons = buttons & (BTN_LEFT | BTN_MIDDLE | BTN_RIGHT);
+                }
 
-                        // Middle
-                        if (pressed  & BTN_MIDDLE) != 0 { input.mouse_press(2); }
-                        if (released & BTN_MIDDLE) != 0 { input.mouse_release(2); }
+                ClientEvent::CutText(s) => {
+                    debug!("cut text from client: {}", s);
+                }
 
-                        // Right
-                        if (pressed  & BTN_RIGHT)  != 0 { input.mouse_press(3); }
-                        if (released & BTN_RIGHT)  != 0 { input.mouse_release(3); }
+                ClientEvent::SetEncodings(_encs) => {
+                    // Ignored in this simple server
+                }
 
-                        last_buttons = buttons & (BTN_LEFT | BTN_MIDDLE | BTN_RIGHT);
+                ClientEvent::ClientResize { width, height } => {
+                    info!("client resize -> {}x{}", width, height);
+                    client_w = width;
+                    client_h = height;
 
-                        // (Optional) debug
-                        // debug!("pointer: btn={:#010b} x={} y={}", buttons, x, y);
-                    }
+                    // Force a full update on next capture tick
+                    let _ = capture_tx.send(false);
 
-
-                    ClientEvent::CutText(s) => {
-                        debug!("cut text from client: {}", s);
-                    }
-
-                    ClientEvent::SetEncodings(_encs) => {
-                        // Ignored in this simple server
-                    }
-
-                    ClientEvent::ClientResize { width, height } => {
-                        info!("client resize -> {}x{}", width, height);
-                        client_w = width;
-                        client_h = height;
-
-                        // Strategy A (simple): force a full update on next capture tick
-                        let _ = capture_tx.send(false);
-
-                        // Try to actually resize the X screen (best-effort; safe to fail)
+                    // Best-effort randr change (blocking -> offload)
+                    tokio::task::spawn_blocking(move || {
                         try_resize_display_best_effort(display, width, height);
-                    }
+                    });
                 }
             }
         }
+
+        Ok(())
     }
 }
 
@@ -572,12 +536,13 @@ mod linux_impl {
     #[command(author, version, about = "Remap server (Linux only)", long_about = None)]
     struct ServerArgs {}
 
-    pub fn main_linux() -> Result<()> {
+    pub async fn main_linux() -> Result<()> {
         eprintln!("remap server: this binary is implemented for Linux only.");
         Ok(())
     }
 }
 
-fn main() -> Result<()> {
-    linux_impl::main_linux()
+#[tokio::main(flavor = "multi_thread")]
+async fn main() -> Result<()> {
+    linux_impl::main_linux().await
 }

@@ -223,7 +223,7 @@ impl ClientEvent {
 #[derive(Debug)]
 pub enum ServerEvent {
     FramebufferUpdate { count: u16, rectangles: Vec<Rec> },
-    SetColorMapEntries { first: u16, colors: Vec<(u16, u16, u16)> }, // <-- NEW
+    SetColorMapEntries { first: u16, colors: Vec<(u16, u16, u16)> }, // optional; safe to ignore client-side
     Bell,
     CutText(String),
 }
@@ -236,9 +236,7 @@ impl ServerEvent {
         let message_type = read_u8(reader).await?;
         match message_type {
             0 => {
-                // FramebufferUpdate
-                let mut pad = [0u8; 1];
-                reader.read_exact(&mut pad).await?;
+                // FramebufferUpdate (NO padding byte)
                 let count = read_u16_be(reader).await?;
                 let mut rectangles = Vec::with_capacity(count as usize);
                 for _ in 0..count {
@@ -247,7 +245,7 @@ impl ServerEvent {
                 Ok(ServerEvent::FramebufferUpdate { count, rectangles })
             }
             1 => {
-                // SetColorMapEntries (RFB): pad, firstColour, nColours, then n*(r,g,b)
+                // SetColorMapEntries (RFB-style): 1 pad, then first, n, then n*(r,g,b)
                 let mut pad = [0u8; 1];
                 reader.read_exact(&mut pad).await?;
                 let first = read_u16_be(reader).await?;
@@ -263,12 +261,11 @@ impl ServerEvent {
             }
             2 => Ok(ServerEvent::Bell),
             3 => {
-                // CutText
-                let mut pad = [0u8; 3];
-                reader.read_exact(&mut pad).await?;
-                Ok(ServerEvent::CutText(read_string_be(reader).await?))
+                // ServerCutText (NO 3-byte pad; your server doesn’t send this anyway)
+                let text = read_string_be(reader).await?;
+                Ok(ServerEvent::CutText(text))
             }
-            _ => anyhow::bail!("server to client message type"),
+            other => anyhow::bail!("unsupported server to client message type {}", other),
         }
     }
 
@@ -279,16 +276,15 @@ impl ServerEvent {
         match self {
             ServerEvent::FramebufferUpdate { count, rectangles } => {
                 write_u8(writer, 0).await?;
-                writer.write_all(&[0u8; 1]).await?;
+                // NO padding
                 write_u16_be(writer, *count).await?;
                 for r in rectangles {
                     r.write(writer).await?;
                 }
             }
             ServerEvent::SetColorMapEntries { first, colors } => {
-                // Not commonly sent by client, but implement for completeness.
                 write_u8(writer, 1).await?;
-                writer.write_all(&[0u8; 1]).await?;
+                writer.write_all(&[0u8; 1]).await?; // 1-byte pad per RFB
                 write_u16_be(writer, *first).await?;
                 write_u16_be(writer, colors.len() as u16).await?;
                 for (r, g, b) in colors {
@@ -302,7 +298,7 @@ impl ServerEvent {
             }
             ServerEvent::CutText(text) => {
                 write_u8(writer, 3).await?;
-                writer.write_all(&[0u8; 3]).await?;
+                // NO 3-byte pad
                 write_string_be(writer, text).await?;
             }
         }
