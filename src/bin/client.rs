@@ -81,7 +81,7 @@ pub fn main() -> Result<()> {
     let (canvas_tx, canvas_rx) = flume::unbounded::<ClientEvent>();
 
     // writer thread
-    let mut w = writer;
+    let w = writer;
     std::thread::spawn(move || {
         while let Ok(evt) = canvas_rx.recv() {
             if evt.write_to(&mut w).is_err() { break; }
@@ -89,7 +89,7 @@ pub fn main() -> Result<()> {
     });
 
     // reader thread
-    let mut r = reader;
+    let r = reader;
     std::thread::spawn(move || {
         while let Ok(reply) = ServerEvent::read_from(&mut r) {
             let _ = client_tx.send(reply);
