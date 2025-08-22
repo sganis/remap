@@ -6,7 +6,6 @@ mod macos;
 #[cfg(target_os = "windows")]
 mod windows;
 
-use std::path::Path;
 use std::process::Command;
 
 // --- Public API re-exported per-OS (no `platform` module re-export) ---
@@ -17,6 +16,7 @@ pub use linux::{
     screen_size,
     resize_window_to,
     maximize_window,
+    force_move_resize,
 };
 //#[cfg(target_os = "macos")]
 //pub use macos::{get_window_geometry, get_window_id};

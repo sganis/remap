@@ -14,40 +14,40 @@ use x11rb::protocol::xproto::{
     BUTTON_RELEASE_EVENT,
     MOTION_NOTIFY_EVENT,
 };
-use x11rb::protocol::xtest::ConnectionExt as _;
+use x11rb::protocol::xtest::ConnectionExt as _; // XTEST extension
 use x11rb::rust_connection::RustConnection;
 
 use crate::{MOD_SHIFT, MOD_CTRL, MOD_ALT, MOD_META};
 
-// --- KeySym constants we care about ---
-const XK_BackSpace:  u32 = 0xFF08;
-const XK_Tab:        u32 = 0xFF09;
-const XK_Return:     u32 = 0xFF0D;
-const XK_Escape:     u32 = 0xFF1B;
-const XK_Delete:     u32 = 0xFFFF;
-const XK_KP_Enter:   u32 = 0xFF8D;
+// --- KeySym constants we care about (ALL_CAPS) ---
+const XK_BACKSPACE:  u32 = 0xFF08;
+const XK_TAB:        u32 = 0xFF09;
+const XK_RETURN:     u32 = 0xFF0D;
+const XK_ESCAPE:     u32 = 0xFF1B;
+const XK_DELETE:     u32 = 0xFFFF;
+const XK_KP_ENTER:   u32 = 0xFF8D;
 
-const XK_Home:       u32 = 0xFF50;
-const XK_Left:       u32 = 0xFF51;
-const XK_Up:         u32 = 0xFF52;
-const XK_Right:      u32 = 0xFF53;
-const XK_Down:       u32 = 0xFF54;
-const XK_Page_Up:    u32 = 0xFF55;
-const XK_Page_Down:  u32 = 0xFF56;
-const XK_End:        u32 = 0xFF57;
-const XK_Insert:     u32 = 0xFF63;
+const XK_HOME:       u32 = 0xFF50;
+const XK_LEFT:       u32 = 0xFF51;
+const XK_UP:         u32 = 0xFF52;
+const XK_RIGHT:      u32 = 0xFF53;
+const XK_DOWN:       u32 = 0xFF54;
+const XK_PAGE_UP:    u32 = 0xFF55;
+const XK_PAGE_DOWN:  u32 = 0xFF56;
+const XK_END:        u32 = 0xFF57;
+const XK_INSERT:     u32 = 0xFF63;
 
 // Modifiers (left-preferred)
-const XK_Shift_L:    u32 = 0xFFE1;
-const XK_Shift_R:    u32 = 0xFFE2;
-const XK_Control_L:  u32 = 0xFFE3;
-const XK_Control_R:  u32 = 0xFFE4;
-const XK_Alt_L:      u32 = 0xFFE9;
-const XK_Alt_R:      u32 = 0xFFEA;
-const XK_Meta_L:     u32 = 0xFFE7;
-const XK_Meta_R:     u32 = 0xFFE8;
-const XK_Super_L:    u32 = 0xFFEB;
-const XK_Super_R:    u32 = 0xFFEC;
+const XK_SHIFT_L:    u32 = 0xFFE1;
+const XK_SHIFT_R:    u32 = 0xFFE2;
+const XK_CONTROL_L:  u32 = 0xFFE3;
+const XK_CONTROL_R:  u32 = 0xFFE4;
+const XK_ALT_L:      u32 = 0xFFE9;
+const XK_ALT_R:      u32 = 0xFFEA;
+const XK_META_L:     u32 = 0xFFE7;
+const XK_META_R:     u32 = 0xFFE8;
+const XK_SUPER_L:    u32 = 0xFFEB;
+const XK_SUPER_R:    u32 = 0xFFEC;
 
 // ---- Virtual key bytes (MUST match client) ----
 const VK_HOME:   u8 = 0xE0;
@@ -91,10 +91,10 @@ impl Input {
         let mapping = fetch_keyboard_mapping(&conn);
         let keysym_to_code = invert_keyboard_mapping(&mapping, min_code);
 
-        let shift_code = pick_first(&keysym_to_code, &[XK_Shift_L, XK_Shift_R]);
-        let ctrl_code  = pick_first(&keysym_to_code, &[XK_Control_L, XK_Control_R]);
-        let alt_code   = pick_first(&keysym_to_code, &[XK_Alt_L, XK_Alt_R]);
-        let meta_code  = pick_first(&keysym_to_code, &[XK_Meta_L, XK_Meta_R, XK_Super_L, XK_Super_R]);
+        let shift_code = pick_first(&keysym_to_code, &[XK_SHIFT_L, XK_SHIFT_R]);
+        let ctrl_code  = pick_first(&keysym_to_code, &[XK_CONTROL_L, XK_CONTROL_R]);
+        let alt_code   = pick_first(&keysym_to_code, &[XK_ALT_L, XK_ALT_R]);
+        let meta_code  = pick_first(&keysym_to_code, &[XK_META_L, XK_META_R, XK_SUPER_L, XK_SUPER_R]);
 
         Self {
             conn, root, keysym_to_code, min_code, max_code,
@@ -213,32 +213,32 @@ impl Input {
     fn resolve_from_byte(&self, key: u8) -> (Option<u32>, Option<u8>, bool) {
         // Controls
         match key {
-            8   => return (Some(XK_BackSpace), self.keysym_to_code.get(&XK_BackSpace).copied(), false),
-            9   => return (Some(XK_Tab),       self.keysym_to_code.get(&XK_Tab).copied(),       false),
+            8   => return (Some(XK_BACKSPACE), self.keysym_to_code.get(&XK_BACKSPACE).copied(), false),
+            9   => return (Some(XK_TAB),       self.keysym_to_code.get(&XK_TAB).copied(),       false),
             10 | 13 =>
-                return if let Some(c) = self.keysym_to_code.get(&XK_Return).copied() {
-                    (Some(XK_Return), Some(c), false)
-                } else if let Some(c) = self.keysym_to_code.get(&XK_KP_Enter).copied() {
-                    (Some(XK_KP_Enter), Some(c), false)
+                return if let Some(c) = self.keysym_to_code.get(&XK_RETURN).copied() {
+                    (Some(XK_RETURN), Some(c), false)
+                } else if let Some(c) = self.keysym_to_code.get(&XK_KP_ENTER).copied() {
+                    (Some(XK_KP_ENTER), Some(c), false)
                 } else {
-                    (Some(XK_Return), None, false)
+                    (Some(XK_RETURN), None, false)
                 },
-            27  => return (Some(XK_Escape),    self.keysym_to_code.get(&XK_Escape).copied(),    false),
-            127 => return (Some(XK_Delete),    self.keysym_to_code.get(&XK_Delete).copied(),    false),
+            27  => return (Some(XK_ESCAPE),    self.keysym_to_code.get(&XK_ESCAPE).copied(),    false),
+            127 => return (Some(XK_DELETE),    self.keysym_to_code.get(&XK_DELETE).copied(),    false),
             _ => {}
         }
 
         // Navigation + arrows via virtual key bytes
         match key {
-            VK_HOME  => return (Some(XK_Home),      self.keysym_to_code.get(&XK_Home).copied(),      false),
-            VK_END   => return (Some(XK_End),       self.keysym_to_code.get(&XK_End).copied(),       false),
-            VK_INSERT=> return (Some(XK_Insert),    self.keysym_to_code.get(&XK_Insert).copied(),    false),
-            VK_PGUP  => return (Some(XK_Page_Up),   self.keysym_to_code.get(&XK_Page_Up).copied(),   false),
-            VK_PGDN  => return (Some(XK_Page_Down), self.keysym_to_code.get(&XK_Page_Down).copied(), false),
-            VK_LEFT  => return (Some(XK_Left),      self.keysym_to_code.get(&XK_Left).copied(),      false),
-            VK_RIGHT => return (Some(XK_Right),     self.keysym_to_code.get(&XK_Right).copied(),     false),
-            VK_UP    => return (Some(XK_Up),        self.keysym_to_code.get(&XK_Up).copied(),        false),
-            VK_DOWN  => return (Some(XK_Down),      self.keysym_to_code.get(&XK_Down).copied(),      false),
+            VK_HOME  => return (Some(XK_HOME),      self.keysym_to_code.get(&XK_HOME).copied(),      false),
+            VK_END   => return (Some(XK_END),       self.keysym_to_code.get(&XK_END).copied(),       false),
+            VK_INSERT=> return (Some(XK_INSERT),    self.keysym_to_code.get(&XK_INSERT).copied(),    false),
+            VK_PGUP  => return (Some(XK_PAGE_UP),   self.keysym_to_code.get(&XK_PAGE_UP).copied(),   false),
+            VK_PGDN  => return (Some(XK_PAGE_DOWN), self.keysym_to_code.get(&XK_PAGE_DOWN).copied(), false),
+            VK_LEFT  => return (Some(XK_LEFT),      self.keysym_to_code.get(&XK_LEFT).copied(),      false),
+            VK_RIGHT => return (Some(XK_RIGHT),     self.keysym_to_code.get(&XK_RIGHT).copied(),     false),
+            VK_UP    => return (Some(XK_UP),        self.keysym_to_code.get(&XK_UP).copied(),        false),
+            VK_DOWN  => return (Some(XK_DOWN),      self.keysym_to_code.get(&XK_DOWN).copied(),      false),
             _ => {}
         }
 
