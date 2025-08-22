@@ -24,9 +24,12 @@ const VK_DOWN:   u8 = 0xE8;
 
 pub struct Canvas {
     window: Window,
+
+    // Framebuffer (server) dimensions and pixel data
+    fb_w: u32,
+    fb_h: u32,
     buffer: Vec<u32>,
-    width: u32,
-    height: u32,
+
     client_tx: Sender<ClientEvent>,
     client_rx: Receiver<ServerEvent>,
     buttons: u8,
@@ -36,20 +39,25 @@ pub struct Canvas {
 
 impl Canvas {
     pub fn new(client_tx: Sender<ClientEvent>, client_rx: Receiver<ServerEvent>) -> Result<Self> {
-        // resizable window from the start
+        // Resizable window; buffer will scale with aspect ratio preserved.
         let mut window = Window::new(
             "Remap",
+            1280,
             800,
-            600,
-            WindowOptions { resize: true, scale_mode: ScaleMode::AspectRatioStretch, ..WindowOptions::default() },
+            WindowOptions {
+                resize: true,
+                //scale_mode: ScaleMode::AspectRatioStretch, // keep aspect ratio (letterbox)
+                scale_mode: ScaleMode::Stretch, // keep aspect ratio (letterbox)
+                ..WindowOptions::default()
+            },
         ).expect("Unable to create window");
         window.set_target_fps(60);
 
         Ok(Self {
             window,
-            buffer: vec![0; 800 * 600],
-            width: 800,
-            height: 600,
+            fb_w: 1280,
+            fb_h: 800,
+            buffer: vec![0; 1280 * 800],
             client_tx,
             client_rx,
             buttons: 0,
@@ -58,47 +66,67 @@ impl Canvas {
         })
     }
 
-    /// Optional: server can still call this to force size.
+    /// Set the framebuffer size to match the remote display/app geometry.
+    /// This recreates the window to that size (for a crisp default view) but does NOT notify server.
     pub fn resize(&mut self, width: u32, height: u32) -> Result<(u32,u32)> {
-        // Keep window resizable
+        self.fb_w = width.max(1);
+        self.fb_h = height.max(1);
+        self.buffer.resize((self.fb_w * self.fb_h) as usize, 0);
+
+        // Recreate the window to start at native resolution; users can resize later.
         let mut window = Window::new(
             "Remap",
-            width as usize,
-            height as usize,
-            WindowOptions { resize: true, scale_mode: ScaleMode::AspectRatioStretch, ..WindowOptions::default() },
+            self.fb_w as usize,
+            self.fb_h as usize,
+            WindowOptions {
+                resize: true,
+                //scale_mode: ScaleMode::AspectRatioStretch,
+                scale_mode: ScaleMode::Stretch,
+                ..WindowOptions::default()
+            },
         ).expect("Unable to create window");
         window.set_target_fps(60);
         self.window = window;
 
-        self.width = width;
-        self.height = height;
-        self.buffer.resize((width * height) as usize, 0);
-
-        // Inform server of the new client size
-        self.client_tx.send(ClientEvent::ClientResize {
-            width:  self.width.min(u16::MAX as u32) as u16,
-            height: self.height.min(u16::MAX as u32) as u16,
-        })?;
-
-        Ok((width, height))
+        self.need_update = true;
+        Ok((self.fb_w, self.fb_h))
     }
 
     pub fn is_open(&self) -> bool { self.window.is_open() }
 
     pub fn draw(&mut self, rec: &Rec) -> Result<()> {
         if self.buffer.is_empty() || rec.width == 0 || rec.height == 0 { return Ok(()); }
-        let fb_w = self.width as i32; let fb_h = self.height as i32;
-        let rx = rec.x as i32; let ry = rec.y as i32; let rw = rec.width as i32; let rh = rec.height as i32;
 
-        let x0 = rx.max(0).min(fb_w); let y0 = ry.max(0).min(fb_h);
-        let x1 = (rx + rw).max(0).min(fb_w); let y1 = (ry + rh).max(0).min(fb_h);
-        let cw = (x1 - x0).max(0) as usize; let ch = (y1 - y0).max(0) as usize;
+        // If the server ever sends larger rects (e.g., it resized), expand our framebuffer.
+        let need_w = (rec.x as u32 + rec.width as u32).max(self.fb_w);
+        let need_h = (rec.y as u32 + rec.height as u32).max(self.fb_h);
+        if need_w != self.fb_w || need_h != self.fb_h {
+            self.fb_w = need_w;
+            self.fb_h = need_h;
+            self.buffer.resize((self.fb_w * self.fb_h) as usize, 0);
+        }
+
+        let fb_w = self.fb_w as i32;
+        let fb_h = self.fb_h as i32;
+
+        let rx = rec.x as i32;
+        let ry = rec.y as i32;
+        let rw = rec.width as i32;
+        let rh = rec.height as i32;
+
+        // Clip to framebuffer dimensions (NOT the window size)
+        let x0 = rx.max(0).min(fb_w);
+        let y0 = ry.max(0).min(fb_h);
+        let x1 = (rx + rw).max(0).min(fb_w);
+        let y1 = (ry + rh).max(0).min(fb_h);
+        let cw = (x1 - x0).max(0) as usize;
+        let ch = (y1 - y0).max(0) as usize;
         if cw == 0 || ch == 0 { return Ok(()); }
 
         let src_stride = rec.width as usize * 4;
         let src_x_off = (x0 - rx).max(0) as usize;
         let src_y_off = (y0 - ry).max(0) as usize;
-        let dst_stride = self.width as usize;
+        let dst_stride = self.fb_w as usize;
 
         for row in 0..ch {
             let src_row_start = (src_y_off + row) * src_stride + src_x_off * 4;
@@ -114,15 +142,15 @@ impl Canvas {
                 s += 4;
             }
         }
+
         Ok(())
     }
 
     pub fn update(&mut self) -> Result<()> {
-        // detect window resize and notify server
-        self.handle_window_resize()?; // sends ClientResize on change
-
         if self.need_update {
-            self.window.update_with_buffer(&self.buffer, self.width as usize, self.height as usize)
+            // Always push using framebuffer dimensions; minifb scales to the current window
+            self.window
+                .update_with_buffer(&self.buffer, self.fb_w as usize, self.fb_h as usize)
                 .expect("Unable to update screen buffer");
             self.need_update = false;
         } else {
@@ -197,43 +225,18 @@ impl Canvas {
         }
         if any {
             self.need_update = true;
-            // incremental request as per your flow, or omit here if server drives updates
-            // self.request_update(true)?;
         }
         Ok(())
     }
 
-    /// Inform server we want more pixels (optional with your flow)
+    /// Ask server for more pixels (optional depending on your flow)
     pub fn request_update(&mut self, incremental: bool) -> Result<()> {
         self.client_tx.send(ClientEvent::FramebufferUpdateRequest {
             incremental,
             x: 0, y: 0,
-            width: self.width.min(u16::MAX as u32) as u16,
-            height: self.height.min(u16::MAX as u32) as u16,
+            width: self.fb_w.min(u16::MAX as u32) as u16,
+            height: self.fb_h.min(u16::MAX as u32) as u16,
         })?;
-        Ok(())
-    }
-
-    /// Detect window size change and send ClientResize.
-    fn handle_window_resize(&mut self) -> Result<()> {
-        let (w, h) = self.window.get_size();
-        if w == 0 || h == 0 { return Ok(()); } // ignore minimized
-        let (w, h) = (w as u32, h as u32);
-
-        if w != self.width || h != self.height {
-            debug!("client resized: {}x{} -> {}x{}", self.width, self.height, w, h);
-            self.width = w;
-            self.height = h;
-
-            // Resize local framebuffer to match the new window size
-            self.buffer.resize((self.width * self.height) as usize, 0);
-
-            // Tell the server our new size
-            self.client_tx.send(ClientEvent::ClientResize {
-                width:  self.width.min(u16::MAX as u32) as u16,
-                height: self.height.min(u16::MAX as u32) as u16,
-            })?;
-        }
         Ok(())
     }
 }
