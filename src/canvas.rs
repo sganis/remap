@@ -11,17 +11,16 @@ const BTN_RIGHT:      u8 = 0x04;
 const BTN_WHEEL_UP:   u8 = 0x08;
 const BTN_WHEEL_DOWN: u8 = 0x10;
 
-// ---- Virtual key bytes for non-ASCII keys (shared idea with server) ----
-const VK_HOME:      u8 = 0xE0;
-const VK_END:       u8 = 0xE1;
-const VK_INSERT:    u8 = 0xE2;
-const VK_PGUP:      u8 = 0xE3;
-const VK_PGDN:      u8 = 0xE4;
-const VK_LEFT:      u8 = 0xE5;
-const VK_RIGHT:     u8 = 0xE6;
-const VK_UP:        u8 = 0xE7;
-const VK_DOWN:      u8 = 0xE8;
-// (Delete remains 0x7F == 127)
+// ---- Virtual key bytes for non-ASCII keys (must match server) ----
+const VK_HOME:   u8 = 0xE0;
+const VK_END:    u8 = 0xE1;
+const VK_INSERT: u8 = 0xE2;
+const VK_PGUP:   u8 = 0xE3;
+const VK_PGDN:   u8 = 0xE4;
+const VK_LEFT:   u8 = 0xE5;
+const VK_RIGHT:  u8 = 0xE6;
+const VK_UP:     u8 = 0xE7;
+const VK_DOWN:   u8 = 0xE8;
 
 pub struct Canvas {
     window: Window,
@@ -37,9 +36,17 @@ pub struct Canvas {
 
 impl Canvas {
     pub fn new(client_tx: Sender<ClientEvent>, client_rx: Receiver<ServerEvent>) -> Result<Self> {
+        // resizable window from the start
+        let mut window = Window::new(
+            "Remap",
+            800,
+            600,
+            WindowOptions { resize: true, scale_mode: ScaleMode::AspectRatioStretch, ..WindowOptions::default() },
+        ).expect("Unable to create window");
+        window.set_target_fps(60);
+
         Ok(Self {
-            window: Window::new("Remap", 800, 600, WindowOptions::default())
-                .expect("Unable to create window"),
+            window,
             buffer: vec![0; 800 * 600],
             width: 800,
             height: 600,
@@ -51,7 +58,9 @@ impl Canvas {
         })
     }
 
+    /// Optional: server can still call this to force size.
     pub fn resize(&mut self, width: u32, height: u32) -> Result<(u32,u32)> {
+        // Keep window resizable
         let mut window = Window::new(
             "Remap",
             width as usize,
@@ -60,9 +69,17 @@ impl Canvas {
         ).expect("Unable to create window");
         window.set_target_fps(60);
         self.window = window;
+
         self.width = width;
         self.height = height;
         self.buffer.resize((width * height) as usize, 0);
+
+        // Inform server of the new client size
+        self.client_tx.send(ClientEvent::ClientResize {
+            width:  self.width.min(u16::MAX as u32) as u16,
+            height: self.height.min(u16::MAX as u32) as u16,
+        })?;
+
         Ok((width, height))
     }
 
@@ -101,6 +118,9 @@ impl Canvas {
     }
 
     pub fn update(&mut self) -> Result<()> {
+        // detect window resize and notify server
+        self.handle_window_resize()?; // sends ClientResize on change
+
         if self.need_update {
             self.window.update_with_buffer(&self.buffer, self.width as usize, self.height as usize)
                 .expect("Unable to update screen buffer");
@@ -144,7 +164,7 @@ impl Canvas {
             }
         }
 
-        // ---- Keyboard ----
+        // Keyboard
         let mods = current_mods(&self.window);
 
         for key in self.window.get_keys_pressed(minifb::KeyRepeat::No) {
@@ -177,20 +197,48 @@ impl Canvas {
         }
         if any {
             self.need_update = true;
-            self.request_update(true)?; // next incremental
+            // incremental request as per your flow, or omit here if server drives updates
+            // self.request_update(true)?;
         }
         Ok(())
     }
 
+    /// Inform server we want more pixels (optional with your flow)
     pub fn request_update(&mut self, incremental: bool) -> Result<()> {
         self.client_tx.send(ClientEvent::FramebufferUpdateRequest {
-            incremental, x: 0, y: 0, width: self.width as u16, height: self.height as u16
+            incremental,
+            x: 0, y: 0,
+            width: self.width.min(u16::MAX as u32) as u16,
+            height: self.height.min(u16::MAX as u32) as u16,
         })?;
+        Ok(())
+    }
+
+    /// Detect window size change and send ClientResize.
+    fn handle_window_resize(&mut self) -> Result<()> {
+        let (w, h) = self.window.get_size();
+        if w == 0 || h == 0 { return Ok(()); } // ignore minimized
+        let (w, h) = (w as u32, h as u32);
+
+        if w != self.width || h != self.height {
+            debug!("client resized: {}x{} -> {}x{}", self.width, self.height, w, h);
+            self.width = w;
+            self.height = h;
+
+            // Resize local framebuffer to match the new window size
+            self.buffer.resize((self.width * self.height) as usize, 0);
+
+            // Tell the server our new size
+            self.client_tx.send(ClientEvent::ClientResize {
+                width:  self.width.min(u16::MAX as u32) as u16,
+                height: self.height.min(u16::MAX as u32) as u16,
+            })?;
+        }
         Ok(())
     }
 }
 
-// ---- helpers ----
+/* ===== helpers ===== */
 
 fn current_mods(window: &Window) -> u16 {
     let mut m = 0;
@@ -202,9 +250,6 @@ fn current_mods(window: &Window) -> u16 {
 }
 
 /// Map a minifb::Key to a single byte for the protocol.
-/// Letters/digits/punctuation use their unshifted ASCII byte.
-/// Navigation and arrows use VK_* in 0xE0..0xE8.
-/// Modifiers are *not* sent as standalone events; they’re in the mods bitmask.
 fn map_key_to_byte(key: Key) -> Option<u8> {
     use Key::*;
     Some(match key {
@@ -228,7 +273,7 @@ fn map_key_to_byte(key: Key) -> Option<u8> {
         Home=>VK_HOME, End=>VK_END, Insert=>VK_INSERT, PageUp=>VK_PGUP, PageDown=>VK_PGDN,
         Left=>VK_LEFT, Right=>VK_RIGHT, Up=>VK_UP, Down=>VK_DOWN,
 
-        // ignore pure modifiers and unsupported keys (F-keys etc. not encoded in u8)
+        // ignore pure modifiers and F-keys here
         LeftShift | RightShift | LeftCtrl | RightCtrl | LeftAlt | RightAlt | LeftSuper | RightSuper
         | F1 | F2 | F3 | F4 | F5 | F6 | F7 | F8 | F9 | F10 | F11 | F12
         => return None,
